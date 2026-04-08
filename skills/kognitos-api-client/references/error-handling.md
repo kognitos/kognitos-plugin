@@ -14,3 +14,5 @@ Use this reference when deciding how integration failures should behave.
 - Keep user-facing errors simpler than internal diagnostic errors.
 - Preserve correlation IDs or request IDs when available.
 - Avoid retries on business-logic rejections.
+- Prefer SDK-provided retry and timeout behavior in application code instead of rebuilding it around raw HTTP calls.
+- Use `curl` reproductions to capture the exact request and response when debugging auth, payload, or endpoint issues.
