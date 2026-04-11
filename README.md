@@ -20,6 +20,7 @@ The initial skill set covers:
 ```text
 kognitos-plugin/
 ├── .claude/
+├── .claude-plugin/
 ├── .cursor-plugin/
 ├── .plugin/
 ├── package.json
@@ -43,41 +44,59 @@ Each skill uses progressive disclosure:
 - `kognitos-debugging`
 - `kognitos-deployment`
 
-## Using The Repo
+## Quick Start
 
-### Local Use
+### 1. Get a Kognitos PAT
 
-Clone the repository and use `skills/` as the canonical skill source:
+Generate a Personal Access Token from the Kognitos console. The token prefix is `kgn_pat_`.
+
+### 2. Create `.env.local`
 
 ```bash
-git clone https://github.com/kognitos/kognitos-plugin.git
-cd kognitos-plugin
+KOGNITOS_TOKEN=kgn_pat_<your-token>
+KOGNITOS_REGION=us
+KOGNITOS_ENV=dev
+KOGNITOS_ORGANIZATION_ID=<your-org-id>
+KOGNITOS_WORKSPACE_ID=<your-workspace-id>
 ```
 
-### Cursor
+If you don't know your org/workspace IDs yet, set `KOGNITOS_TOKEN`, `KOGNITOS_REGION`, and `KOGNITOS_ENV`, then use the bootstrap skill to discover them.
+
+### 3. Install the plugin
+
+#### Claude Code
+
+```bash
+/plugin marketplace add https://github.com/kognitos/kognitos-plugin
+```
+
+Then install the `kognitos` plugin from the marketplace list. Use `/kognitos-bootstrap` to verify your setup.
+
+#### Cursor
 
 Cursor-specific packaging is included in `.cursor-plugin/plugin.json`.
 
-- Use this repo as the source for Cursor plugin installation or local plugin development.
-- The plugin manifest points Cursor at the shared `skills/` directory.
-
-### Codex / OpenAI
+#### Codex / OpenAI
 
 Codex-facing packaging is included in `.plugin/plugin.json`.
 
-- The repo is ready for Codex-compatible packaging and local workflow use.
-- Today, treat `skills/` as the main portable integration surface.
-- Keep `.plugin/` in place so the repo stays aligned with the expected plugin path as that distribution model matures.
+## API Base URL
 
-### Claude Code
+The Kognitos API base URL follows this pattern:
 
-Claude workspace support is included via `.claude/settings.json`.
+```
+https://app.<region>-<az>[.<env>].kognitos.com
+```
 
-- Use the shared `skills/` directory as the canonical content source.
-- Keep `.claude/` minimal and avoid maintaining a second skill tree.
+| Region | Env | Base URL |
+|--------|-----|----------|
+| us | prod | `https://app.us-1.kognitos.com` |
+| us | dev | `https://app.us-1.dev.kognitos.com` |
+| eu | prod | `https://app.eu-1.kognitos.com` |
 
 ## Tooling Support
 
+- Claude Code marketplace plugin via `.claude-plugin/marketplace.json`
 - Agent Skills-compatible skill layout via `skills/`
 - Codex/OpenAI packaging readiness via `.plugin/plugin.json`
 - Cursor plugin packaging via `.cursor-plugin/plugin.json`

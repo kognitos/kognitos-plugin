@@ -5,29 +5,49 @@ Use this reference before choosing whether to reach for `curl`, the public SDK, 
 ## Public Sources
 
 - Public OpenAPI spec:
-  `https://github.com/kognitos/kognitos-node/blob/main/.openapi/openapi.yaml`
+  `https://github.com/kognitos/openapi/blob/main/latest/openapi.yaml`
 - Public TypeScript SDK repository:
   `https://github.com/kognitos/kognitos-node`
 - Public npm package:
   `https://www.npmjs.com/package/@kognitos/node`
+- MCP server (Nexus) source:
+  `https://github.com/kognitos/nexus`
 
-## Recommended Split
+## Base URL
 
-- Use `curl` first when you need to:
+```
+https://app.<region>-<az>[.<env>].kognitos.com
+```
+
+| Region | Env | Base URL |
+|--------|-----|----------|
+| us | prod | `https://app.us-1.kognitos.com` |
+| us | dev | `https://app.us-1.dev.kognitos.com` |
+| eu | prod | `https://app.eu-1.kognitos.com` |
+
+## API Surfaces
+
+### REST API (OpenAPI)
+
+Covers organizations, workspaces, automations (metadata), runs, files, exceptions, and analytics. Auth is `Authorization: Bearer <kgn_pat_...>`.
+
+Use `curl` first when you need to:
   - verify authentication
   - inspect raw payloads
   - reproduce a bug
-  - confirm endpoint behavior before writing code
-- Use `@kognitos/node` first when you need to:
+  - discover org/workspace IDs
+
+Use `@kognitos/node` first when you need to:
   - integrate Kognitos into application code
   - benefit from typed responses
   - rely on built-in retries, timeouts, pagination, or streaming support
 
-## What The Public Spec Suggests
+### Automation Agent API
 
-The public OpenAPI surface is PAT/bearer-token based and covers broad application concerns including organizations, workspaces, automations, runs, files, exceptions, and analytics.
+The Kognitos AI agent creates and refines automation code through a conversational thread. This API is **not** in the public OpenAPI spec — it is documented in [automation-agent-api.md](automation-agent-api.md).
 
-That makes the API skill worth structuring around two modes:
-
-- exploration mode with `curl`
-- production mode with the public SDK behind a local adapter
+Key points:
+- Automation `english_code` and `code` are **read-only** via REST — they are authored by the AI agent.
+- In URL paths, the agent ID is the literal string `quill` (e.g. `.../agents/quill/threads/{thread_id}`).
+- Messages use streaming NDJSON and a double-nested `user_message` structure.
+- The conversation is non-deterministic — the agent may ask questions, request connections, or iterate on the code.
