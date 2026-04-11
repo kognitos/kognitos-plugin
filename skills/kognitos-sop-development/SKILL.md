@@ -14,11 +14,26 @@ Use this skill when you are authoring, reviewing, or restructuring Kognitos SOPs
 2. Use [references/authoring-patterns.md](references/authoring-patterns.md) to structure decision points and failure handling.
 3. Start from [assets/sop-design-template.md](assets/sop-design-template.md) when drafting a new SOP or refactoring a brittle one.
 
+## Creating Automations
+
+Automation code is authored by the **Kognitos AI agent** through a conversational thread, not set directly via REST. The workflow is:
+
+1. Create an automation shell via `POST .../automations`
+2. Create an agent thread linked to it via `POST .../agents/quill/threads`
+3. Describe what you want in natural language via `POST .../threads/{id}:sendMessage`
+4. The agent prototypes, tests, saves, and validates the code
+5. Send follow-up messages to the same thread to iterate
+
+The conversation is non-deterministic — the agent may ask clarifying questions or take multiple turns. Drive it interactively.
+
+For full API details, see the `kognitos-api-client` skill's [automation-agent-api.md](../kognitos-api-client/references/automation-agent-api.md).
+
 ## When To Load More
 
 - For ownership boundaries: [references/workflow-boundaries.md](references/workflow-boundaries.md)
 - For SOP structure and branch design: [references/authoring-patterns.md](references/authoring-patterns.md)
 - For drafting: [assets/sop-design-template.md](assets/sop-design-template.md)
+- For the automation agent API: [kognitos-api-client/references/automation-agent-api.md](../kognitos-api-client/references/automation-agent-api.md)
 
 ## Notes
 
