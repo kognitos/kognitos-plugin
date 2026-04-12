@@ -9,13 +9,49 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Check generated manifests
-        run: python3 scripts/generate_manifests.py --check
       - name: Validate skills and packaging
         run: python3 scripts/validate_repo.py
+      - name: Check generated manifests
+        run: python3 scripts/generate_manifests.py --check
+
+  release:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Get semver-release-bot token
+        id: get-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.SEMVER_APP_ID }}
+          private-key: ${{ secrets.SEMVER_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.get-token.outputs.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Semantic Release
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          branches: main
+          extra_plugins: |
+            @semantic-release/exec
+            @semantic-release/git
+            @semantic-release/changelog
+            conventional-changelog-conventionalcommits@8
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}

@@ -90,7 +90,15 @@ curl -sS \
 
 Look for `completion_response` with `state: "STATE_COMPLETE"`.
 
-### 5. Invoke the automation
+### 5. Confirm with the user before running
+
+After the automation is created and saved, **ask the user if they want to invoke it** before proceeding. Do not automatically run the automation. Present a summary of what was created and ask for confirmation, e.g.:
+
+> The automation "[name]" has been created. Would you like me to run it now?
+
+Only proceed to step 6 if the user confirms.
+
+### 6. Invoke the automation
 
 ```bash
 curl -sS -X POST \
@@ -102,7 +110,7 @@ curl -sS -X POST \
 
 Returns `run_id`.
 
-### 6. Poll the run for results
+### 7. Poll the run for results
 
 ```bash
 curl -sS \
@@ -117,9 +125,9 @@ The `state` field is a one-of:
 | `pending` | Queued |
 | `executing` | Running |
 | `completed` | Done — `outputs` map contains results |
-| `failed` | Error — `description` has details |
-| `awaiting_guidance` | Needs user input (exception) |
-| `stopped` | Paused |
+| `failed` | Terminated with an unrecoverable error |
+| `awaiting_guidance` | Paused — waiting for human input to resolve an exception (recoverable) |
+| `stopped` | Paused by a user or control action (recoverable) |
 
 Outputs are keyed by name with `commonV1Value` types (e.g. `{"number": {"lo": 2, ...}}` or `{"text": "hello"}`).
 
