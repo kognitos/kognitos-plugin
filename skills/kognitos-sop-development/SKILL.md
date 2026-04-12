@@ -28,14 +28,27 @@ The conversation is non-deterministic — the agent may ask clarifying questions
 
 For full API details, see the `kognitos-api-client` skill's [automation-agent-api.md](../kognitos-api-client/references/automation-agent-api.md).
 
+## Integration Discovery
+
+When an SOP needs a third-party integration, use the Books API to find available connectors:
+
+1. **Search books** by keyword (e.g. "Salesforce", "email") to find matching integrations.
+2. **Search procedures** to find specific actions (e.g. "create invoice", "send notification").
+3. **List workspace books** to see what's already available.
+
+See [books-api.md](../kognitos-api-client/references/books-api.md) for the full reference.
+
 ## When To Load More
 
 - For ownership boundaries: [references/workflow-boundaries.md](references/workflow-boundaries.md)
 - For SOP structure and branch design: [references/authoring-patterns.md](references/authoring-patterns.md)
 - For drafting: [assets/sop-design-template.md](assets/sop-design-template.md)
 - For the automation agent API: [kognitos-api-client/references/automation-agent-api.md](../kognitos-api-client/references/automation-agent-api.md)
+- For integration discovery and procedures: [kognitos-api-client/references/books-api.md](../kognitos-api-client/references/books-api.md)
+- For file handling in workflows: [kognitos-api-client/references/files-api.md](../kognitos-api-client/references/files-api.md)
 
 ## Notes
 
 - Optimize for clarity and auditability over cleverness.
 - Keep the workflow contract explicit: inputs, decisions, outputs, and error paths.
+- When an SOP requires file inputs, document the expected file format and use the Files API for upload.

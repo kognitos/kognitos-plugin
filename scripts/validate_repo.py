@@ -13,6 +13,8 @@ SKILLS_ROOT = PACKAGE_ROOT / "skills"
 PACKAGE_JSON_PATH = PACKAGE_ROOT / "package.json"
 PLUGIN_MANIFEST_PATH = PACKAGE_ROOT / ".plugin" / "plugin.json"
 CURSOR_MANIFEST_PATH = PACKAGE_ROOT / ".cursor-plugin" / "plugin.json"
+CLAUDE_MARKETPLACE_PATH = PACKAGE_ROOT / ".claude-plugin" / "marketplace.json"
+CLAUDE_PLUGIN_PATH = PACKAGE_ROOT / ".claude-plugin" / "plugin.json"
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 REQUIRED_FRONTMATTER_KEYS = {"name", "description"}
@@ -83,17 +85,29 @@ def validate_manifests() -> list[str]:
     cursor_metadata = package_metadata.get("kognitosPlugin", {})
     plugin_manifest = json.loads(PLUGIN_MANIFEST_PATH.read_text())
     cursor_manifest = json.loads(CURSOR_MANIFEST_PATH.read_text())
+    claude_marketplace = json.loads(CLAUDE_MARKETPLACE_PATH.read_text())
+    claude_plugin = json.loads(CLAUDE_PLUGIN_PATH.read_text())
+    plugin_name = cursor_metadata.get("cursorName", package_metadata["name"])
 
     if plugin_manifest.get("name") != package_metadata["name"]:
         errors.append(".plugin/plugin.json name is out of sync with package.json")
     if plugin_manifest.get("version") != package_metadata["version"]:
         errors.append(".plugin/plugin.json version is out of sync with package.json")
-    if cursor_manifest.get("name") != cursor_metadata.get("cursorName", package_metadata["name"]):
+    if cursor_manifest.get("name") != plugin_name:
         errors.append(".cursor-plugin/plugin.json name is out of sync with package.json")
     if cursor_manifest.get("version") != package_metadata["version"]:
         errors.append(".cursor-plugin/plugin.json version is out of sync with package.json")
     if cursor_manifest.get("skills") != "skills":
         errors.append(".cursor-plugin/plugin.json must point skills at skills/")
+    if claude_marketplace.get("name") != package_metadata["name"]:
+        errors.append(".claude-plugin/marketplace.json name is out of sync with package.json")
+    marketplace_plugins = claude_marketplace.get("plugins", [])
+    if not marketplace_plugins or marketplace_plugins[0].get("version") != package_metadata["version"]:
+        errors.append(".claude-plugin/marketplace.json plugin version is out of sync with package.json")
+    if claude_plugin.get("name") != plugin_name:
+        errors.append(".claude-plugin/plugin.json name is out of sync with package.json")
+    if claude_plugin.get("version") != package_metadata["version"]:
+        errors.append(".claude-plugin/plugin.json version is out of sync with package.json")
     return errors
 
 
