@@ -2,6 +2,19 @@
 
 Use this reference when you need to create or refine automations programmatically through the Kognitos AI agent.
 
+## Do not script this end-to-end
+
+This is a **conversational API**, not a pipeline. Treat each step as `send → observe → decide → send`, running one request at a time and reading the response before issuing the next. Do not wrap the flow in a single script that blasts all the calls through and parses the end.
+
+Concretely:
+
+- The agent may return a `thread_interrupt` asking for clarification, a connection, or a credential. A script that doesn't branch on the terminal object shape will hang or reply with the wrong message type.
+- The same prompt can produce different code across runs. Inspect the `artifact` and `agent_message` output before moving on; don't assume the first artifact is the final one.
+- Multi-turn refinement is the norm, not the exception. Expect to send follow-up messages on the same thread after reading the previous turn's output.
+- Running a saved automation is a separate mechanism (`POST .../automations/{id}:invoke` against the automation resource, not a thread message). Don't conflate "ask the agent to run it" with "invoke the automation."
+
+If you're tempted to write a wrapper script that does `create_shell → create_thread → send_message → wait_for_completion → invoke → poll → print`, stop. Drive the conversation; don't automate it.
+
 ## Overview
 
 Automation code cannot be set directly via REST. The `english_code` and `code` fields on the automation resource are read-only through PATCH — they are authored by the AI agent through a conversational thread.
@@ -91,6 +104,17 @@ curl -sS \
 ```
 
 Look for `completion_response` with `state: "STATE_COMPLETE"`.
+
+## Authoring vs. running — different mechanisms
+
+Once the automation is saved, there are two separate surfaces. Do not confuse them:
+
+| Goal | Mechanism | Endpoint |
+|------|-----------|----------|
+| Change, refine, or debug the code | Send another message on the Quill thread | `POST .../<THREAD_NAME>:sendMessage` |
+| Execute a saved automation and capture outputs | Invoke the automation resource and poll the run | `POST .../automations/{id}:invoke` then `GET .../runs/{run_id}` |
+
+**Do not send a thread message like "please run it"** to get outputs. The agent authors code; it does not produce an auditable run record with `outputs`. The `:invoke` endpoint does. There is also no "draft runs are blocked in the same turn they're saved" restriction — invoke as soon as the `completion_response` arrives.
 
 ### 5. Invoke the automation
 
