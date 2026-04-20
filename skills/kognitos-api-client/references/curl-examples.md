@@ -84,9 +84,11 @@ curl -sS -X POST \
   "${BASE_URL}/api/v1/organizations/${KOGNITOS_ORGANIZATION_ID}/workspaces/${KOGNITOS_WORKSPACE_ID}/agents/quill/threads"
 ```
 
-### Step 3: Send prompt (response is streaming NDJSON)
+Capture the returned `name` as `THREAD_NAME` — it includes the `automations/{auto_id}` segment and is the correct URL prefix for all subsequent thread operations.
 
-Note the double-nested `user_message` structure.
+### Step 3: Send prompt (response is a stream of JSON objects)
+
+Note the double-nested `user_message` structure. The response body is concatenated pretty-printed JSON, not line-delimited NDJSON — parse with an incremental decoder (`json.JSONDecoder().raw_decode` in Python).
 
 ```bash
 curl -sS -X POST \
@@ -100,7 +102,7 @@ curl -sS -X POST \
       }
     }
   }' \
-  "${BASE_URL}/api/v1/organizations/${KOGNITOS_ORGANIZATION_ID}/workspaces/${KOGNITOS_WORKSPACE_ID}/agents/quill/threads/${THREAD_ID}:sendMessage"
+  "${BASE_URL}/api/v1/${THREAD_NAME}:sendMessage"
 ```
 
 ### Step 4: Invoke the automation

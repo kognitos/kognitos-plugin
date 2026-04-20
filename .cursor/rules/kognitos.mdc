@@ -1,0 +1,40 @@
+---
+description: Kognitos plugin — progressive-disclosure skills for Kognitos application development
+alwaysApply: true
+---
+
+# Kognitos Plugin — Cursor Guidance
+
+This repository ships Kognitos development skills as markdown under `skills/`. Each skill is a self-contained playbook with progressive disclosure (`SKILL.md` for the default workflow, plus `references/`, `scripts/`, and `assets/`).
+
+Cursor does not have a native skills runtime, so treat the skills as authoritative reference material: when a task matches one of the skills below, open the skill's `SKILL.md` and follow it. Drill into `references/` only when the default workflow points you there.
+
+## Available skills
+
+- `skills/kognitos-bootstrap/SKILL.md` — set up a Kognitos workspace, verify prerequisites, discover org/workspace IDs.
+- `skills/kognitos-app-development/SKILL.md` — build Kognitos-backed applications with clear architecture boundaries and Lattice UI patterns.
+- `skills/kognitos-sop-development/SKILL.md` — design and refine Kognitos SOPs with traceable decision points.
+- `skills/kognitos-api-client/SKILL.md` — integrate Kognitos APIs through explicit adapters and stable request contracts.
+- `skills/kognitos-debugging/SKILL.md` — isolate failure boundaries and capture evidence when debugging Kognitos apps and workflows.
+- `skills/kognitos-deployment/SKILL.md` — promote Kognitos changes across environments with explicit release checks.
+
+## How to use
+
+1. Identify which skill the user's request maps to (bootstrap, app dev, SOP, API, debugging, deployment).
+2. Read that skill's `SKILL.md` before writing code or giving advice.
+3. Prefer the patterns, file layouts, and conventions documented in the skill over inventing new ones.
+4. If the skill's default workflow points to a file under `references/`, open and follow it.
+
+## Environment
+
+Kognitos API calls require credentials in `.env.local` at the repo root:
+
+```
+KOGNITOS_TOKEN=kgn_pat_<token>
+KOGNITOS_REGION=us
+KOGNITOS_ENV=dev
+KOGNITOS_ORGANIZATION_ID=<org-id>
+KOGNITOS_WORKSPACE_ID=<workspace-id>
+```
+
+If org/workspace IDs are unknown, start with `skills/kognitos-bootstrap/SKILL.md` — it documents how to discover them from a token.

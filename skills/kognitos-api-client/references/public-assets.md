@@ -48,6 +48,6 @@ The Kognitos AI agent creates and refines automation code through a conversation
 
 Key points:
 - Automation `english_code` and `code` are **read-only** via REST — they are authored by the AI agent.
-- In URL paths, the agent ID is the literal string `quill` (e.g. `.../agents/quill/threads/{thread_id}`).
-- Messages use streaming NDJSON and a double-nested `user_message` structure.
+- In URL paths, the agent ID is the literal string `quill`. The canonical thread path includes the automation: `.../automations/{auto_id}/agents/quill/threads/{thread_id}`.
+- `sendMessage` returns a stream of concatenated pretty-printed JSON objects (not line-delimited NDJSON). The request uses a double-nested `user_message` structure.
 - The conversation is non-deterministic — the agent may ask questions, request connections, or iterate on the code.

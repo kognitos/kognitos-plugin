@@ -1,0 +1,20 @@
+{
+  "name": "local-kognitos-plugins",
+  "interface": {
+    "displayName": "Local Kognitos Plugins"
+  },
+  "plugins": [
+    {
+      "name": "kognitos-plugin",
+      "source": {
+        "source": "local",
+        "path": "./plugins/kognitos-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Development"
+    }
+  ]
+}

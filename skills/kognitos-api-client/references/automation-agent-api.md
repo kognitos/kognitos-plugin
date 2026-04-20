@@ -44,8 +44,10 @@ curl -sS -X POST \
   "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/agents/quill/threads"
 ```
 
-Response includes `name` with the thread ID:
-`organizations/{org}/workspaces/{ws}/agents/quill/threads/{thread_id}`
+Response includes `name`, the canonical thread path — note the `automations/{auto_id}` segment:
+`organizations/{org}/workspaces/{ws}/automations/{auto_id}/agents/quill/threads/{thread_id}`
+
+Capture that whole string as `THREAD_NAME` and use it as the URL prefix for every subsequent thread operation. Do not rebuild the path from parts; the `automations/` segment is required.
 
 ### 3. Send a prompt to the agent
 
@@ -61,12 +63,12 @@ curl -sS -X POST \
       }
     }
   }' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/agents/quill/threads/${THREAD_ID}:sendMessage"
+  "${BASE_URL}/api/v1/${THREAD_NAME}:sendMessage"
 ```
 
 **Note the double-nested `user_message` structure.** The outer is the thread message envelope; the inner is the user message payload.
 
-The response is **streaming NDJSON** — one JSON object per line. Key message types:
+The response is a **stream of JSON objects** — concatenated pretty-printed JSON, not line-delimited NDJSON. A naive per-line reader won't parse it; use an incremental decoder (`json.JSONDecoder().raw_decode` in Python, `JSONStream` or equivalent elsewhere). Key message types:
 
 | Field | Meaning |
 |-------|---------|
@@ -85,7 +87,7 @@ List thread messages after the stream ends:
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/agents/quill/threads/${THREAD_ID}/messages?page_size=50"
+  "${BASE_URL}/api/v1/${THREAD_NAME}/messages?page_size=50"
 ```
 
 Look for `completion_response` with `state: "STATE_COMPLETE"`.
@@ -139,7 +141,7 @@ curl -sS -X POST \
       }
     }
   }' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/agents/quill/threads/${THREAD_ID}:sendMessage"
+  "${BASE_URL}/api/v1/${THREAD_NAME}:sendMessage"
 ```
 
 ## Responding to Interrupts
@@ -159,14 +161,16 @@ curl -sS -X POST \
       }
     }
   }' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/agents/quill/threads/${THREAD_ID}:sendMessage"
+  "${BASE_URL}/api/v1/${THREAD_NAME}:sendMessage"
 ```
 
 ## Other Thread Endpoints
 
+Paths marked `<THREAD_NAME>` expand to the full `automations/{auto_id}/agents/quill/threads/{thread_id}` resource returned by the create-thread response.
+
 | Action | Method | Path |
 |--------|--------|------|
-| Get thread | GET | `.../agents/quill/threads/{thread_id}` |
-| List threads | GET | `.../agents/quill/threads` |
-| List messages | GET | `.../agents/quill/threads/{thread_id}/messages` |
-| Stop thread | POST | `.../agents/quill/threads/{thread_id}:stop` |
+| Get thread | GET | `.../<THREAD_NAME>` |
+| List threads | GET | `.../workspaces/{ws}/agents/quill/threads` |
+| List messages | GET | `.../<THREAD_NAME>/messages` |
+| Stop thread | POST | `.../<THREAD_NAME>:stop` |
