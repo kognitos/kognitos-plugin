@@ -43,7 +43,7 @@
       "name": "local-kognitos-plugins",
       "displayName": "Local Kognitos Plugins",
       "category": "Development",
-      "sourcePath": "./plugins/kognitos-plugin"
+      "sourcePath": "./"
     }
   }
 }

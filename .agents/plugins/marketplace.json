@@ -8,7 +8,7 @@
       "name": "kognitos-plugin",
       "source": {
         "source": "local",
-        "path": "./plugins/kognitos-plugin"
+        "path": "./"
       },
       "policy": {
         "installation": "AVAILABLE",

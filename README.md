@@ -36,7 +36,7 @@ It will walk through the credential check and, if your PAT is set, confirm API c
 
 ### Codex CLI
 
-This repo includes both the plugin manifest at `.codex-plugin/plugin.json` and a repo-local marketplace entry at `.agents/plugins/marketplace.json`, which points Codex at `./plugins/kognitos-plugin` for local distribution.
+This repo includes both the plugin manifest at `.codex-plugin/plugin.json` and a repo-local marketplace entry at `.agents/plugins/marketplace.json`, which points Codex at the repo root (`./`) for local distribution.
 
 ```bash
 git clone https://github.com/kognitos/kognitos-plugin.git
@@ -112,7 +112,6 @@ kognitos-plugin/
 ├── .codex-plugin/       # Codex plugin manifest (generated)
 ├── .cursor/rules/       # Cursor project rules (hand-authored)
 ├── package.json         # Canonical metadata source
-├── plugins/             # Codex marketplace install path(s)
 ├── scripts/             # Manifest generation and repo validation
 └── skills/              # Canonical skill content (SKILL.md + references/scripts/assets)
 ```

@@ -47,7 +47,20 @@ curl -sS -X POST \
 Response includes `name` with the automation ID embedded:
 `organizations/{org}/workspaces/{ws}/automations/{automation_id}`
 
-### 2. Create a thread linked to the automation
+### 2. Find or create the Quill thread
+
+Before creating, list threads filtered by the automation — if one already exists, reuse it rather than creating a parallel thread. This matches how the web app behaves and keeps the conversation history on one thread.
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  --get \
+  --data-urlencode "page_size=1" \
+  --data-urlencode "filter=automation = \"organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}\"" \
+  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/agents/quill/threads"
+```
+
+If the response is empty, create one:
 
 ```bash
 curl -sS -X POST \
@@ -93,7 +106,19 @@ The response is a **stream of JSON objects** — concatenated pretty-printed JSO
 | `thread_interrupt` | Agent needs clarification — respond with `interrupt_response` |
 | `completion_response` | Terminal message — agent is done |
 
-### 4. Poll for completion (alternative to streaming)
+### 4. Resume a disconnected stream
+
+If your client drops the connection while the most recent message is still in a non-terminal state, resume the stream in place rather than sending a new message:
+
+```bash
+curl -sS -X POST \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "${BASE_URL}/api/v1/${THREAD_NAME}:resumeStream"
+```
+
+### 5. Poll for completion (alternative to streaming)
 
 List thread messages after the stream ends:
 
@@ -116,7 +141,7 @@ Once the automation is saved, there are two separate surfaces. Do not confuse th
 
 **Do not send a thread message like "please run it"** to get outputs. The agent authors code; it does not produce an auditable run record with `outputs`. The `:invoke` endpoint does. There is also no "draft runs are blocked in the same turn they're saved" restriction — invoke as soon as the `completion_response` arrives.
 
-### 5. Invoke the automation
+### 6. Invoke the automation
 
 ```bash
 curl -sS -X POST \
@@ -128,7 +153,7 @@ curl -sS -X POST \
 
 Returns `run_id`.
 
-### 6. Poll the run for results
+### 7. Poll the run for results
 
 ```bash
 curl -sS \
@@ -197,4 +222,5 @@ Paths marked `<THREAD_NAME>` expand to the full `automations/{auto_id}/agents/qu
 | Get thread | GET | `.../<THREAD_NAME>` |
 | List threads | GET | `.../workspaces/{ws}/agents/quill/threads` |
 | List messages | GET | `.../<THREAD_NAME>/messages` |
+| Resume most recent stream | POST | `.../<THREAD_NAME>:resumeStream` |
 | Stop thread | POST | `.../<THREAD_NAME>:stop` |
