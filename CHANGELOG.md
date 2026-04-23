@@ -1,46 +1,28 @@
-## 1.0.0 (2026-04-23)
-
-### Features
-
-* add automated PR review via team request trigger ([#8](https://github.com/kognitos/kognitos-plugin/issues/8)) ([4a66b84](https://github.com/kognitos/kognitos-plugin/commit/4a66b8497c69912d9e3b8f8ea3db8c22e10027e0))
-
 # Changelog
 
-## [0.2.0](https://github.com/kognitos/kognitos-plugin/compare/v0.1.0...v0.2.0) (2026-04-11)
+## 1.0.0 (2026-04-23)
 
+Initial public release of the Kognitos plugin — structured skills for working with the Kognitos platform from Claude Code, Codex, and Cursor.
 
-### Features
+### Skills
 
-* **api-client:** add runs API reference (list, get, events, outputs, pause/continue) ([#runs-api](references/runs-api.md))
-* **api-client:** add exceptions API reference (inspect, manage, assign, reply, guides) ([#exceptions-api](references/exceptions-api.md))
-* **api-client:** add scheduling API reference (CRUD, enable/disable, patterns) ([#scheduling-api](references/scheduling-api.md))
-* **api-client:** add files API reference (upload, read, metadata) ([#files-api](references/files-api.md))
-* **api-client:** add books/integrations API reference (search, procedures, connections) ([#books-api](references/books-api.md))
-* **api-client:** add analytics API reference (run stats, insights, exception insights) ([#analytics-api](references/analytics-api.md))
-* **api-client:** add run report template for structured audit trails ([#run-report](assets/run-report-template.md))
-* **ci:** add GitHub Actions workflow for validation and semantic-release
-* **ci:** add semantic-release config with conventional commits
+* **kognitos-bootstrap** — workspace setup, prerequisite verification, and initial development baseline
+* **kognitos-api-client** — integration with Kognitos APIs (automation agent, runs, exceptions, scheduling, files, books, analytics) with curl and Node SDK examples
+* **kognitos-app-development** — building Kognitos-backed applications with Lattice-aligned UI patterns
+* **kognitos-sop-development** — designing SOPs with clear boundaries, traceable decision points, and maintainable workflow patterns
+* **kognitos-debugging** — isolating failure boundaries and capturing evidence
+* **kognitos-deployment** — promoting changes through environments with explicit release checks
 
+### Platform Integrations
 
-### Bug Fixes
+* Claude Code marketplace manifest (`.claude-plugin/marketplace.json`)
+* Codex plugin manifest (`.codex-plugin/plugin.json`)
+* Cursor rules (`.cursor/rules/kognitos.mdc`)
+* Agents marketplace manifest (`.agents/plugins/marketplace.json`)
 
-* **api-client:** distinguish awaiting_guidance from failed in run state documentation
-* **api-client:** add user confirmation step before invoking automations
+### Tooling
 
-
-### Chores
-
-* remove unused .claude/ directory
-* add .claude-plugin/marketplace.json to manifest generation pipeline
-* add bump_version.py script for local version management
-
-
-## [0.1.0](https://github.com/kognitos/kognitos-plugin/releases/tag/v0.1.0) (2026-04-11)
-
-
-### Features
-
-* initial plugin with 6 skills: bootstrap, app-development, sop-development, api-client, debugging, deployment
-* automation creation and invocation via AI agent API
-* multi-platform manifests (Claude Code, Cursor, Codex)
-* validation scripts for skill structure and manifest sync
+* `scripts/generate_manifests.py` — single-source manifest generation from `package.json`
+* `scripts/validate_repo.py` — skill structure and manifest-sync validation
+* Automated PR review workflow via team-request trigger ([#8](https://github.com/kognitos/kognitos-plugin/pull/8))
+* GitHub Actions CI (validate + CodeQL + semantic-release)
