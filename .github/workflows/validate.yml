@@ -50,8 +50,6 @@ jobs:
           branches: main
           extra_plugins: |
             @semantic-release/exec
-            @semantic-release/git
-            @semantic-release/changelog
             conventional-changelog-conventionalcommits@8
         env:
           GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
