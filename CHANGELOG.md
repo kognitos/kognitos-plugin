@@ -1,3 +1,9 @@
+## 1.0.0 (2026-04-23)
+
+### Features
+
+* add automated PR review via team request trigger ([#8](https://github.com/kognitos/kognitos-plugin/issues/8)) ([4a66b84](https://github.com/kognitos/kognitos-plugin/commit/4a66b8497c69912d9e3b8f8ea3db8c22e10027e0))
+
 # Changelog
 
 ## [0.2.0](https://github.com/kognitos/kognitos-plugin/compare/v0.1.0...v0.2.0) (2026-04-11)
