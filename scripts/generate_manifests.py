@@ -12,6 +12,8 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_JSON_PATH = PACKAGE_ROOT / "package.json"
 CODEX_MANIFEST_PATH = PACKAGE_ROOT / ".codex-plugin" / "plugin.json"
 CODEX_MARKETPLACE_PATH = PACKAGE_ROOT / ".agents" / "plugins" / "marketplace.json"
+CLAUDE_MANIFEST_PATH = PACKAGE_ROOT / ".claude-plugin" / "plugin.json"
+CLAUDE_MARKETPLACE_PATH = PACKAGE_ROOT / ".claude-plugin" / "marketplace.json"
 
 
 def load_package_metadata() -> dict:
@@ -114,19 +116,23 @@ def main() -> int:
     args = parser.parse_args()
 
     package_metadata = load_package_metadata()
-    expected_codex = build_codex_manifest(package_metadata)
-    expected_marketplace = build_codex_marketplace(package_metadata)
+    targets = [
+        (CODEX_MANIFEST_PATH, build_codex_manifest(package_metadata)),
+        (CODEX_MARKETPLACE_PATH, build_codex_marketplace(package_metadata)),
+        (CLAUDE_MANIFEST_PATH, build_claude_plugin(package_metadata)),
+        (CLAUDE_MARKETPLACE_PATH, build_claude_marketplace(package_metadata)),
+    ]
 
     if args.check:
-        actual_codex = json.loads(CODEX_MANIFEST_PATH.read_text())
-        actual_marketplace = json.loads(CODEX_MARKETPLACE_PATH.read_text())
-        if actual_codex != expected_codex or actual_marketplace != expected_marketplace:
-            print("Plugin manifests are out of sync with package.json.", file=sys.stderr)
+        drift = [path for path, expected in targets if json.loads(path.read_text()) != expected]
+        if drift:
+            for path in drift:
+                print(f"Out of sync with package.json: {path.relative_to(PACKAGE_ROOT)}", file=sys.stderr)
             return 1
         return 0
 
-    _write_json(CODEX_MANIFEST_PATH, expected_codex)
-    _write_json(CODEX_MARKETPLACE_PATH, expected_marketplace)
+    for path, expected in targets:
+        _write_json(path, expected)
     return 0
 
 

@@ -26,6 +26,9 @@
     "build:manifests:check": "python3 scripts/generate_manifests.py --check",
     "validate": "python3 scripts/validate_repo.py"
   },
+  "kognitosPlugin": {
+    "cursorName": "kognitos"
+  },
   "codexPlugin": {
     "interface": {
       "displayName": "Kognitos Plugin",
