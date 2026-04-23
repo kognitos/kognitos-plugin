@@ -11,8 +11,9 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = PACKAGE_ROOT / "skills"
 PACKAGE_JSON_PATH = PACKAGE_ROOT / "package.json"
-PLUGIN_MANIFEST_PATH = PACKAGE_ROOT / ".plugin" / "plugin.json"
-CURSOR_MANIFEST_PATH = PACKAGE_ROOT / ".cursor-plugin" / "plugin.json"
+CODEX_MANIFEST_PATH = PACKAGE_ROOT / ".codex-plugin" / "plugin.json"
+CODEX_MARKETPLACE_PATH = PACKAGE_ROOT / ".agents" / "plugins" / "marketplace.json"
+CURSOR_RULES_DIR = PACKAGE_ROOT / ".cursor" / "rules"
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 REQUIRED_FRONTMATTER_KEYS = {"name", "description"}
@@ -80,21 +81,36 @@ def validate_skill_dir(skill_dir: Path) -> list[str]:
 def validate_manifests() -> list[str]:
     errors: list[str] = []
     package_metadata = json.loads(PACKAGE_JSON_PATH.read_text())
-    cursor_metadata = package_metadata.get("kognitosPlugin", {})
-    plugin_manifest = json.loads(PLUGIN_MANIFEST_PATH.read_text())
-    cursor_manifest = json.loads(CURSOR_MANIFEST_PATH.read_text())
+    marketplace_metadata = package_metadata.get("codexPlugin", {}).get("marketplace", {})
+    codex_manifest = json.loads(CODEX_MANIFEST_PATH.read_text())
+    marketplace_manifest = json.loads(CODEX_MARKETPLACE_PATH.read_text())
 
-    if plugin_manifest.get("name") != package_metadata["name"]:
-        errors.append(".plugin/plugin.json name is out of sync with package.json")
-    if plugin_manifest.get("version") != package_metadata["version"]:
-        errors.append(".plugin/plugin.json version is out of sync with package.json")
-    if cursor_manifest.get("name") != cursor_metadata.get("cursorName", package_metadata["name"]):
-        errors.append(".cursor-plugin/plugin.json name is out of sync with package.json")
-    if cursor_manifest.get("version") != package_metadata["version"]:
-        errors.append(".cursor-plugin/plugin.json version is out of sync with package.json")
-    if cursor_manifest.get("skills") != "skills":
-        errors.append(".cursor-plugin/plugin.json must point skills at skills/")
+    if codex_manifest.get("name") != package_metadata["name"]:
+        errors.append(".codex-plugin/plugin.json name is out of sync with package.json")
+    if codex_manifest.get("version") != package_metadata["version"]:
+        errors.append(".codex-plugin/plugin.json version is out of sync with package.json")
+    if codex_manifest.get("skills") != "./skills/":
+        errors.append(".codex-plugin/plugin.json must point skills at ./skills/")
+    if codex_manifest.get("homepage") != package_metadata["homepage"]:
+        errors.append(".codex-plugin/plugin.json homepage is out of sync with package.json")
+    if codex_manifest.get("author", {}).get("email") != package_metadata["author"]["email"]:
+        errors.append(".codex-plugin/plugin.json author email is out of sync with package.json")
+    if not codex_manifest.get("interface"):
+        errors.append(".codex-plugin/plugin.json must include interface metadata for install surfaces")
+    if marketplace_manifest.get("plugins", [{}])[0].get("name") != package_metadata["name"]:
+        errors.append(".agents/plugins/marketplace.json plugin name is out of sync with package.json")
+    marketplace_path = marketplace_manifest.get("plugins", [{}])[0].get("source", {}).get("path")
+    if marketplace_path != marketplace_metadata.get("sourcePath"):
+        errors.append(".agents/plugins/marketplace.json source.path is out of sync with package.json")
     return errors
+
+
+def validate_cursor_rules() -> list[str]:
+    if not CURSOR_RULES_DIR.exists():
+        return [".cursor/rules/ directory is missing"]
+    if not any(CURSOR_RULES_DIR.glob("*.mdc")):
+        return [".cursor/rules/ must contain at least one .mdc rule"]
+    return []
 
 
 def main() -> int:
@@ -107,6 +123,7 @@ def main() -> int:
             errors.extend(validate_skill_dir(skill_dir))
 
     errors.extend(validate_manifests())
+    errors.extend(validate_cursor_rules())
 
     if errors:
         print("\n".join(errors), file=sys.stderr)

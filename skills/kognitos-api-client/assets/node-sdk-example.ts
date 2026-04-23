@@ -2,7 +2,7 @@ import Kognitos from '@kognitos/node';
 
 const client = new Kognitos({
   token: process.env.KOGNITOS_TOKEN!,
-  region: (process.env.KOGNITOS_REGION as 'us' | 'eu' | 'uk') || 'us',
+  region: 'us',
 });
 
 export async function listAutomations(params: {

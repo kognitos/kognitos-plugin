@@ -14,13 +14,19 @@ Use this skill when you are authoring, reviewing, or restructuring Kognitos SOPs
 2. Use [references/authoring-patterns.md](references/authoring-patterns.md) to structure decision points and failure handling.
 3. Start from [assets/sop-design-template.md](assets/sop-design-template.md) when drafting a new SOP or refactoring a brittle one.
 
+## Creating Automations
+
+This skill is about *designing* SOPs — boundaries, decisions, failure handling, auditability. For the API mechanics of authoring and running an automation, use the `kognitos-api-client` skill and its [automation-agent-api.md](../kognitos-api-client/references/automation-agent-api.md) reference. Do not duplicate that flow here.
+
 ## When To Load More
 
 - For ownership boundaries: [references/workflow-boundaries.md](references/workflow-boundaries.md)
 - For SOP structure and branch design: [references/authoring-patterns.md](references/authoring-patterns.md)
 - For drafting: [assets/sop-design-template.md](assets/sop-design-template.md)
+- For the automation agent API (authoring and running): use the `kognitos-api-client` skill
 
 ## Notes
 
 - Optimize for clarity and auditability over cleverness.
 - Keep the workflow contract explicit: inputs, decisions, outputs, and error paths.
+- When an SOP requires file inputs, document the expected file format and use the Files API for upload.

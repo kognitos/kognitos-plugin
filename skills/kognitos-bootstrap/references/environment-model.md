@@ -2,22 +2,26 @@
 
 Use this reference when bootstrap work depends on clear environment boundaries.
 
-## Recommended Separation
+## Base URL
 
-- Local development: safe defaults, mock data where possible, minimal secrets.
-- Shared development: real integrations with reversible test data.
-- Staging: production-like dependencies and promotion checks.
-- Production: no exploratory changes, no undocumented secrets handling.
+`KOGNITOS_BASE_URL` is `https://app.us-1.kognitos.com` for US customers. EU customers swap `us-1` for `eu-1`.
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KOGNITOS_TOKEN` | Yes | PAT from the Kognitos console (`kgn_pat_` prefix) |
+| `KOGNITOS_BASE_URL` | Yes | API base URL |
+| `KOGNITOS_ORGANIZATION_ID` | Yes | Organization to operate against |
+| `KOGNITOS_WORKSPACE_ID` | Yes | Workspace to operate against |
+
+## Token Scope
+
+- A PAT authenticates the **user**, not a specific org or workspace.
+- The user may have access to multiple orgs. Use the list-organizations endpoint to discover them.
+- Workspace access is scoped per org. A token may be forbidden from orgs the user can see but doesn't own.
 
 ## What To Clarify Early
 
-- Which environment variables are required for the app to start.
-- Which variables are optional and feature-gated.
-- Which credentials allow write operations.
-- Which external systems are safe to call from development.
-
-## Kognitos Guidance
-
-- Keep workflow logic ownership separate from UI code ownership.
-- Prefer explicit environment names and config files over implicit defaults.
-- Treat auth and execution credentials as separate concerns where possible.
+- Which org and workspace to target.
+- Which credentials allow write operations (invoking automations, managing exceptions).
