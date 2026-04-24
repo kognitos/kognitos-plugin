@@ -14,6 +14,7 @@ CODEX_MANIFEST_PATH = PACKAGE_ROOT / ".codex-plugin" / "plugin.json"
 CODEX_MARKETPLACE_PATH = PACKAGE_ROOT / ".agents" / "plugins" / "marketplace.json"
 CLAUDE_MANIFEST_PATH = PACKAGE_ROOT / ".claude-plugin" / "plugin.json"
 CLAUDE_MARKETPLACE_PATH = PACKAGE_ROOT / ".claude-plugin" / "marketplace.json"
+CURSOR_MANIFEST_PATH = PACKAGE_ROOT / ".cursor-plugin" / "plugin.json"
 
 
 def load_package_metadata() -> dict:
@@ -81,6 +82,22 @@ def build_claude_plugin(package_metadata: dict) -> dict:
     }
 
 
+def build_cursor_plugin(package_metadata: dict) -> dict:
+    plugin_name = package_metadata.get("kognitosPlugin", {}).get("cursorName", package_metadata["name"])
+    return {
+        "name": plugin_name,
+        "version": package_metadata["version"],
+        "description": package_metadata["description"],
+        "author": {
+            "name": package_metadata["author"]["name"],
+            "email": package_metadata["author"]["email"],
+        },
+        "homepage": package_metadata["homepage"],
+        "repository": package_metadata["repository"],
+        "license": package_metadata["license"],
+    }
+
+
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n")
@@ -121,6 +138,7 @@ def main() -> int:
         (CODEX_MARKETPLACE_PATH, build_codex_marketplace(package_metadata)),
         (CLAUDE_MANIFEST_PATH, build_claude_plugin(package_metadata)),
         (CLAUDE_MARKETPLACE_PATH, build_claude_marketplace(package_metadata)),
+        (CURSOR_MANIFEST_PATH, build_cursor_plugin(package_metadata)),
     ]
 
     if args.check:

@@ -13,7 +13,8 @@ SKILLS_ROOT = PACKAGE_ROOT / "skills"
 PACKAGE_JSON_PATH = PACKAGE_ROOT / "package.json"
 CODEX_MANIFEST_PATH = PACKAGE_ROOT / ".codex-plugin" / "plugin.json"
 CODEX_MARKETPLACE_PATH = PACKAGE_ROOT / ".agents" / "plugins" / "marketplace.json"
-CURSOR_RULES_DIR = PACKAGE_ROOT / ".cursor" / "rules"
+CURSOR_MANIFEST_PATH = PACKAGE_ROOT / ".cursor-plugin" / "plugin.json"
+CURSOR_RULES_DIR = PACKAGE_ROOT / "rules"
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 REQUIRED_FRONTMATTER_KEYS = {"name", "description"}
@@ -107,10 +108,24 @@ def validate_manifests() -> list[str]:
 
 def validate_cursor_rules() -> list[str]:
     if not CURSOR_RULES_DIR.exists():
-        return [".cursor/rules/ directory is missing"]
+        return ["rules/ directory is missing"]
     if not any(CURSOR_RULES_DIR.glob("*.mdc")):
-        return [".cursor/rules/ must contain at least one .mdc rule"]
+        return ["rules/ must contain at least one .mdc rule for the Cursor plugin"]
     return []
+
+
+def validate_cursor_manifest() -> list[str]:
+    errors: list[str] = []
+    package_metadata = json.loads(PACKAGE_JSON_PATH.read_text())
+    if not CURSOR_MANIFEST_PATH.exists():
+        return [".cursor-plugin/plugin.json is missing"]
+    manifest = json.loads(CURSOR_MANIFEST_PATH.read_text())
+    expected_name = package_metadata.get("kognitosPlugin", {}).get("cursorName", package_metadata["name"])
+    if manifest.get("name") != expected_name:
+        errors.append(".cursor-plugin/plugin.json name is out of sync with package.json")
+    if manifest.get("version") != package_metadata["version"]:
+        errors.append(".cursor-plugin/plugin.json version is out of sync with package.json")
+    return errors
 
 
 def main() -> int:
@@ -123,6 +138,7 @@ def main() -> int:
             errors.extend(validate_skill_dir(skill_dir))
 
     errors.extend(validate_manifests())
+    errors.extend(validate_cursor_manifest())
     errors.extend(validate_cursor_rules())
 
     if errors:

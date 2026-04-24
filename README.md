@@ -59,15 +59,19 @@ See the [Codex plugins overview](https://developers.openai.com/codex/plugins), [
 
 ### Cursor
 
-Cursor does not have a plugin system — it uses project rules under `.cursor/rules/`. This repo ships `.cursor/rules/kognitos.mdc`, which tells Cursor's model that the canonical Kognitos guidance lives in `skills/` and how to find the right one.
+Cursor 2.5+ supports plugins. This repo ships `.cursor-plugin/plugin.json`, a `rules/` directory with the Kognitos project rule, and the shared `skills/` playbooks — Cursor auto-discovers all three.
 
-To use it in your own Kognitos project:
+Install from the [Cursor Marketplace](https://cursor.com/marketplace) (search for **kognitos**), or via the in-editor UI:
 
-1. Copy the `skills/` directory and `.cursor/rules/kognitos.mdc` into your project (or reference this repo as a git submodule).
-2. Open the project in Cursor. The rule is `alwaysApply: true`, so it attaches to every chat automatically.
-3. Ask about any Kognitos task — Cursor will open the matching `SKILL.md` before proposing changes.
+1. Open the Cursor plugin marketplace panel
+2. Install the `kognitos` plugin
+3. Restart Cursor if prompted
 
-If you'd rather not copy files, you can open this repo alongside your project in a Cursor multi-root workspace; the rule will still apply.
+Once installed, Cursor's agent automatically attaches `rules/kognitos.mdc` (`alwaysApply: true`) to every chat and loads the matching `skills/*/SKILL.md` when a task maps to one of the skills.
+
+**Manual install** (for pre-2.5 Cursor, local development, or offline use): clone this repo into `~/.cursor/plugins/kognitos/`, then restart Cursor. Alternatively, copy `rules/kognitos.mdc` into your project's `.cursor/rules/` directory and the `skills/` directory into your project.
+
+**Enterprise note**: Cursor 3.0 defaults third-party plugin imports to off for Enterprise tenants. Your Cursor admin may need to allow this plugin explicitly.
 
 ## First run
 
@@ -99,10 +103,11 @@ If you don't know your org or workspace IDs yet, leave them blank. Set `KOGNITOS
 ```text
 kognitos-plugin/
 ├── .agents/plugins/     # Codex repo-local marketplace entry (generated)
-├── .claude-plugin/      # Claude Code marketplace manifest
+├── .claude-plugin/      # Claude Code plugin and marketplace manifests (generated)
 ├── .codex-plugin/       # Codex plugin manifest (generated)
-├── .cursor/rules/       # Cursor project rules (hand-authored)
+├── .cursor-plugin/      # Cursor plugin manifest (generated)
 ├── package.json         # Canonical metadata source
+├── rules/               # Cursor plugin rules (.mdc, hand-authored)
 ├── scripts/             # Manifest generation and repo validation
 └── skills/              # Canonical skill content (SKILL.md + references/scripts/assets)
 ```
@@ -126,7 +131,7 @@ Confirm the file sits at the root of the working directory the agent is running 
 Cross-check the region/env combination against the table above. Dev in EU is not publicly available yet.
 
 **Cursor rule isn't being applied.**
-Check that `.cursor/rules/kognitos.mdc` exists in the project opened in Cursor (not just in a sibling folder). Cursor loads rules from the root of the active project.
+Check that the plugin is installed (Cursor → Plugins → search "kognitos"). If using a manual install, confirm the repo lives at `~/.cursor/plugins/kognitos/` and restart Cursor. If you copied files into a project instead, verify `rules/kognitos.mdc` landed at `.cursor/rules/kognitos.mdc` in that project.
 
 ## Maintaining the repo
 
@@ -148,7 +153,7 @@ python3 scripts/validate_repo.py
 
 ## Contributing
 
-Keep skill content in `skills/` only — don't duplicate it per tool. Claude Code reads it directly, Codex installs it through the plugin manifest and repo marketplace entry, and Cursor points at it through the rule in `.cursor/rules/`.
+Keep skill content in `skills/` only — don't duplicate it per tool. Claude Code reads it directly, Codex installs it through the plugin manifest and repo marketplace entry, and Cursor loads it via the `.cursor-plugin/plugin.json` manifest with the project rule in `rules/`.
 
 ## License
 

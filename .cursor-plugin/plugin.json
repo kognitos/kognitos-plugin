@@ -1,0 +1,12 @@
+{
+  "name": "kognitos",
+  "version": "1.0.0",
+  "description": "Structured Kognitos skills for application development, SOP design, debugging, and deployment workflows.",
+  "author": {
+    "name": "Kognitos",
+    "email": "support@kognitos.com"
+  },
+  "homepage": "https://github.com/kognitos/kognitos-plugin",
+  "repository": "https://github.com/kognitos/kognitos-plugin",
+  "license": "MIT"
+}
