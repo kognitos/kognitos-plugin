@@ -96,7 +96,7 @@ jobs:
               "repos/${REPO}/pulls/${PR_NUMBER}/reviews/{}/dismissals" \
               -f message="Re-reviewing." 2>/dev/null || true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
 
