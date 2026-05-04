@@ -100,7 +100,7 @@ This template is designed to be populated from Kognitos API responses:
 3. Execution log        → GET .../runs/{run_id}/events
 4. Outputs              → GET .../runs/{run_id}:getOutputs (or from run state.completed.outputs)
 5. Exceptions           → GET .../exceptions?filter=run="..."
-6. Resolution threads   → GET .../exceptions/{id}/events
+6. Resolution threads   → GET .../runs/{run_id}/agents/{agent_id}/events
 7. Guides               → GET .../automations/{id}/guides
 
 The markdown structure is intentionally flat and table-heavy so it converts cleanly to:

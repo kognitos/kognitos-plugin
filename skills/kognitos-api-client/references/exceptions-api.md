@@ -57,13 +57,15 @@ Supports the same `filter` fields as list (state, automation, group, run, create
 
 ### List exception events (resolution thread)
 
-View the conversation between the exception agent and operators. Requires the automation and run that raised the exception.
+View the conversation between the exception agent and operators. Exception resolution events are retrieved from the agent-scoped run event stream. Requires the automation, run, and agent that owns the resolution thread.
 
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}/exceptions/${EXCEPTION_ID}/events?page_size=50"
+  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}/agents/${AGENT_ID}/events?page_size=50"
 ```
+
+`AGENT_ID` should come from a reliable source or explicit app configuration. For Astral-based resolution integrations, `AGENT_ID` is commonly `astral`, for example `KOGNITOS_EXCEPTION_AGENT_ID=astral`, unless the deployment uses a different agent id.
 
 ## Management Endpoints
 
