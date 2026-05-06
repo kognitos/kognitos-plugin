@@ -26,4 +26,30 @@
   panel rows; activating a row jumps the document to the right page and
   scrolls both the row and the box into view.
 - When the parser yields zero highlights, the UI shows an explicit
-  empty-state message instead of a blank overlay.
+  empty-state message (banner, not a small text strip) instead of a
+  blank overlay.
+- The PDF.js worker is loaded from a same-origin URL, copied during
+  install or build, and pinned to the app's `pdfjs-dist` version.
+- The PDF download adapter tries `workspaces/{ws}/files/{id}:download`
+  before `files/{id}:download` so workspace-scoped files don't 404.
+- The `<canvas>` mounts on `PDFDocumentProxy` ready, not on layout —
+  layout is derived from the first `page.render()`.
+- The dialog uses `key={runId}` (or equivalent) and aborts in-flight
+  payload requests via `AbortController` when closing or switching runs.
+- The initial page is `min(field.pageNumber)` from the parsed
+  highlights, not an unconditional `1`.
+- Bounding-box buttons re-enable highlights when off; clicking a panel
+  row or its confidence meter does the same.
+- SVG mask ids are namespaced via `useId()` and sanitized.
+- The right-panel value chip recursively unwraps nested dictionaries,
+  lists, and decimal-bit numbers; it never falls back to
+  `JSON.stringify`.
+- For non-normalized bounding boxes, the Y-axis flip decision is made
+  per page via overlap scoring against the page rectangle.
+- For chat-surfaced attachments: PDFs with a `runId` route to the rich
+  viewer; images route to an in-app modal; the browser popup is the
+  last-resort fallback only. MIME sniffing covers both the filename
+  AND the URL path.
+- The dialog title shows the document filename across all entry points
+  (dashboard table, chat attachment, expert queue), not a generic
+  "Document Processing" label.

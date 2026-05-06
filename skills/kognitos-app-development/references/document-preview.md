@@ -12,6 +12,10 @@ schematize its inner shape, so the application owns the contract end-to-end:
 parser, overlay geometry, and panel UX must all agree on one canonical
 field model.
 
+This guide is opinionated. Every sub-rule below is in response to a real
+failure mode that a previous implementation hit and a downstream consumer
+noticed. If you skip a rule, expect the failure mode to come back.
+
 ## Default Expectations
 
 - Treat the run payload as canonical. If the parser yields zero highlights,
@@ -25,7 +29,67 @@ field model.
   screen-reader-accessible — overlay buttons get `aria-label`, panel rows
   use real `<button>` elements with focus styling, tooltips have text.
 - Open the viewer in a modal dialog. Do not navigate away from the dashboard
-  context to view a document.
+  context to view a document. Even chat-launched previews stay in-app —
+  see "Embedding the Viewer in a Chat Surface" below.
+
+## Implementation Setup
+
+Two setup pieces must be reproducible across fresh clones and CI. If they
+silently fail, the viewer hangs at "loading PDF" with no useful error.
+
+### PDF.js Worker
+
+- Do not load `pdf.worker` from a public CDN. Version skew between the
+  API bundle and the CDN-hosted worker silently breaks rendering, and
+  the CDN may be unreachable from CI.
+- Copy `pdfjs-dist/build/pdf.worker.min.mjs` into the app's static root
+  (e.g. `public/pdf.worker.mjs`) during `postinstall` or a pre-build
+  script so a fresh clone always has a matching worker on disk.
+- Set `GlobalWorkerOptions.workerSrc` to a same-origin absolute URL
+  (e.g. `/pdf.worker.mjs`).
+- Pin the worker filename to the same `pdfjs-dist` major version the
+  app imports. Skew produces opaque "fake worker" warnings and missing
+  render output.
+
+Reference `package.json` snippet:
+
+```jsonc
+{
+  "scripts": {
+    "postinstall": "node scripts/copy-pdfjs-worker.mjs",
+    "prebuild": "node scripts/copy-pdfjs-worker.mjs"
+  }
+}
+```
+
+Reference copy script (`scripts/copy-pdfjs-worker.mjs`):
+
+```js
+import { cp, mkdir } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const src = resolve(
+  __dirname,
+  "..",
+  "node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
+);
+const dst = resolve(__dirname, "..", "public/pdf.worker.mjs");
+
+await mkdir(dirname(dst), { recursive: true });
+await cp(src, dst);
+console.log(`copied ${src} → ${dst}`);
+```
+
+Reference viewer init:
+
+```ts
+const pdfjs = await import("pdfjs-dist");
+pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.mjs";
+const task = pdfjs.getDocument({ url: pdfUrl, withCredentials: false });
+const doc = await task.promise;
+```
 
 ## Window Chrome and Color Scheme
 
@@ -47,8 +111,135 @@ Other rules:
   the modal already has its own elevation.
 - Avoid colored backgrounds on the rails. Color is reserved for state
   (focused box, hovered row, active page).
-- Dialog header height stays small and shows only the document title and
-  the close button. The toolbar lives in the workspace footer (see below).
+- Dialog header height stays small and shows the document title and the
+  close button. Title is the document filename when known (e.g. invoice
+  number), falling back to a generic "Document Processing" label. The
+  toolbar lives in the workspace footer (see below).
+
+## Render Lifecycle and Reset
+
+The viewer has four startup-ordering hazards. Each silently produces
+"PDF didn't display" symptoms with no console error.
+
+### Canvas Mount Order
+
+- Mount the `<canvas>` as soon as the `PDFDocumentProxy` resolves — NOT
+  after layout exists. Layout (`baseW`/`baseH`/`cssW`/`cssH`) is derived
+  from the first successful `page.render()`, so gating canvas mount on
+  layout produces a circular dependency that never fires.
+- Render the active page first, then read `page.getViewport({ scale: 1 })`
+  to derive `baseW`/`baseH`, then derive `cssW`/`cssH` for the active zoom.
+- Show a lightweight "Rendering…" overlay whenever `layout` is unavailable
+  so the operator sees activity instead of an empty workspace.
+- Prefer `useLayoutEffect` (not `useEffect`) for the active-page render so
+  the canvas paints before the first visible frame when possible.
+
+Reference template for the page component:
+
+```tsx
+function PdfPageWithHighlights({ pdf, pageNumber1, maxCssWidth, ... }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [pageBase, setPageBase] = useState<{ baseW: number; baseH: number } | null>(null);
+
+  // Read base viewport once per page change.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const page = await pdf.getPage(pageNumber1);
+      if (cancelled) return;
+      const baseVp = page.getViewport({ scale: 1 });
+      setPageBase({ baseW: baseVp.width, baseH: baseVp.height });
+    })();
+    return () => { cancelled = true; };
+  }, [pdf, pageNumber1]);
+
+  const layout = useMemo(
+    () => layoutForZoom(pageBase, maxCssWidth),
+    [pageBase, maxCssWidth],
+  );
+
+  // Render synchronously w.r.t. layout commits so the page paints before
+  // the first visible frame whenever possible.
+  useLayoutEffect(() => {
+    if (!layout) return;
+    /* page.render(...) into canvasRef.current using layout numbers */
+  }, [pdf, pageNumber1, layout]);
+
+  return (
+    <div style={layout ? { width: layout.cssW, height: layout.cssH } : { width: maxCssWidth, minHeight: 200 }}>
+      {!layout ? <RenderingOverlay pageNumber={pageNumber1} /> : null}
+      <canvas ref={canvasRef} />
+      {layout && overlayEnabled ? <DimAndOverlayLayers layout={layout} /> : null}
+    </div>
+  );
+}
+```
+
+### Initial Page Sync
+
+- After fields load, set the active page to `min(field.pageNumber)` across
+  the parsed highlights (default to `1` only when there are none).
+- Guard against an unconditional `setPageNum(1)` in the PDF-load effect —
+  if it runs after the field-driven set, every box ends up on a page the
+  operator never navigates to.
+
+Reference:
+
+```ts
+useEffect(() => {
+  if (parsedHighlights.length === 0) return;
+  const first = Math.min(...parsedHighlights.map((h) => h.pageNumber));
+  setActivePage(first);
+}, [parsedHighlights]);
+```
+
+### Reset Across Runs
+
+- Mount the viewer with `key={runId}` (or equivalent) so all state and
+  refs reset when the operator switches to a different run. The viewer's
+  own `runId`-keyed effects are belt-and-suspenders; the `key` is the
+  belt.
+- Reset `highlightsOn` to `true` when the dialog closes, unless preference
+  persistence is intentionally implemented.
+
+```tsx
+{open ? (
+  <InvoicePdfHighlightViewer
+    key={runId}
+    pdfUrl={pdfUrl}
+    runId={runId}
+  />
+) : null}
+```
+
+### Aborting In-flight Requests
+
+- Wrap the payload fetch in an `AbortController`; abort on dialog close
+  AND on `runId` change. Optionally abort the PDF fetch the same way.
+- This prevents a late response from a previous run from overwriting
+  state for the current run — a class of bug that surfaces as
+  "wrong invoice's fields appear in the panel".
+
+```ts
+useEffect(() => {
+  const ctrl = new AbortController();
+  void (async () => {
+    try {
+      const res = await fetch(`/api/kognitos/runs/${runId}/payload`, {
+        signal: ctrl.signal,
+      });
+      const json = await res.json();
+      setParsedHighlights(parseIdpInvoiceFieldHighlights(json.payload));
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return;
+      setPayloadError("Could not load run payload.");
+    } finally {
+      setPayloadLoading(false);
+    }
+  })();
+  return () => ctrl.abort();
+}, [runId]);
+```
 
 ## Document Positioning
 
@@ -69,6 +260,23 @@ through every zoom and panel-toggle. Three rules drive this:
    `min(cap, currentRaw)` keeps the document at the narrower size and
    only re-centers — no surprise enlargement.
 
+Reference helper:
+
+```ts
+type PageLayout = { baseW: number; baseH: number; cssW: number; cssH: number };
+
+function layoutForZoom(
+  pageBase: { baseW: number; baseH: number } | null,
+  maxCssWidth: number,
+): PageLayout | null {
+  if (!pageBase) return null;
+  const cssW = Math.max(120, maxCssWidth);
+  const scale = cssW / pageBase.baseW;
+  const cssH = pageBase.baseH * scale;
+  return { baseW: pageBase.baseW, baseH: pageBase.baseH, cssW, cssH };
+}
+```
+
 Render the page in a vertically scrollable container above a sticky bottom
 toolbar (see next section). Re-fit on `ResizeObserver` callbacks so window
 resize and dialog resize behave the same.
@@ -82,10 +290,10 @@ A pill-shaped, floating toolbar pinned to the bottom of the workspace.
 | 1 | Zoom out | Disabled at min zoom |
 | 2 | Zoom in | Disabled at max zoom |
 | 3 | Fit to width | Resets to fit-cap |
-| 4 | Toggle field highlights | Pressed-state visually distinct (subtle accent fill) |
+| 4 | Toggle field highlights | **Highlight overlay toggle, NOT a confidence control.** Pressed-state visually distinct (subtle accent fill); `aria-pressed` + `aria-label` reflect current state |
 | 5 | Download PDF | Streams from the document fetch endpoint |
 | — | Divider | Visually separates document controls from panel control |
-| 6 | Toggle right panel | Distinct visual treatment (outlined) so it reads as "panel" not "document" |
+| 6 | Toggle right panel | Distinct visual treatment (outlined) so it reads as "panel" not "document"; `aria-pressed`, `aria-expanded`, `aria-label` reflect current state |
 
 Rules:
 
@@ -93,6 +301,11 @@ Rules:
 - The container row is `pointer-events-none` so it does not block document
   clicks; the pill itself re-enables pointer events. This matters when the
   toolbar overlaps the bottom of the document during zoom.
+- The container needs an explicit high `z-index` (above any wrapping
+  `ScrollArea`). Without this, ScrollArea or its scrollbar swallows
+  zoom and toggle clicks at the bottom of the workspace.
+- Tooltips switch text by state (e.g. "Show field highlights" /
+  "Hide field highlights"). Generic "Toggle" labels are not enough.
 - Disabled-state for zoom limits is required — do not let the operator
   click into a no-op.
 - Min/max zoom and step factor are constants near the component. Pick a
@@ -109,17 +322,17 @@ Three layers, all sized in CSS pixels matching the canvas exactly:
    white rect over the whole page, then a black rect per field bbox. This
    is a luminance mask — black areas become transparent in the dim layer.
 2. **Dim layer** (`pointer-events-none`, z-index 10). A solid
-   semi-transparent dark fill (~52% opacity) covers the entire page; the
-   mask cuts holes only where field boxes sit, producing a "spotlight"
-   effect. Do not use `backdrop-filter` — it doubles the cost without
-   improving legibility.
+   semi-transparent dark fill (~58% opacity for legibility on white
+   scanned paper) covers the entire page; the mask cuts holes only where
+   field boxes sit, producing a "spotlight" effect. Do not use
+   `backdrop-filter` — it doubles the cost without improving legibility.
 3. **Overlay button layer** (z-index 20). One transparent `<button>` per
    field, positioned in either CSS percentages (when the bbox is
    normalized) or scaled PDF-point units. Three visual states stacked by
    z-index inside the layer:
-   - Idle (z-21): neutral white border, no fill.
+   - Idle (z-21): neutral white border, **transparent background**, no fill.
    - Linked-hover from panel (z-22): cool accent border (e.g. sky), still
-     no fill.
+     transparent background.
    - Focused (z-23): warm accent border + outer ring (e.g. amber). Only
      one box is focused at a time.
 
@@ -132,6 +345,95 @@ Coordinate mode is per-field, inferred from the decoded bbox magnitudes
 (see "IDP Payload Contract" below). Both modes resolve into the same
 percentage layout against the PDF base viewport, so the overlay code does
 not branch on units.
+
+### Stacking, Isolation, and Mask Scope
+
+- Wrap canvas + mask + overlay layers in a `position: relative` container
+  with `isolation: isolate` so z-index inside the viewer doesn't leak into
+  ancestor stacking contexts (and vice-versa).
+- The dim-layer wrapper uses `pointer-events-none`; only the per-field
+  `<button>` elements use `pointer-events-auto`. A wrapper that captures
+  pointer events will swallow clicks meant for the document.
+- Bounding-box buttons MUST have transparent backgrounds — only border
+  (and the outer ring on focus) is visible. A non-transparent fill hides
+  the document and defeats the spotlight effect.
+- SVG `<mask>` ids MUST be generated with `useId()` and sanitized to a
+  legal SVG id (strip `:`). Two open dialogs — or hydration of a single
+  dialog — produce duplicate ids that break `mask="url(#…)"` references
+  and the dim layer goes fully opaque or fully transparent.
+- If boxes still vanish under the dim plane while inspecting layers in
+  DevTools, force the overlay wrapper into its own GPU layer
+  (`transform-gpu` or `transform: translateZ(0)`) to win the stacking
+  contest.
+
+Reference template:
+
+```tsx
+function PdfPageOverlay({ layout, highlights }) {
+  const rawId = useId();
+  // SVG ids cannot contain ":"; sanitize for portability across
+  // hydration + multi-dialog mounts.
+  const maskId = `inv-dim-${rawId.replace(/:/g, "")}`;
+
+  return (
+    <div className="relative" style={{ isolation: "isolate" }}>
+      <canvas /* ... */ />
+      <svg className="pointer-events-none absolute h-0 w-0 overflow-visible">
+        <defs>
+          <mask
+            id={maskId}
+            maskUnits="userSpaceOnUse"
+            x={0} y={0}
+            width={layout.cssW} height={layout.cssH}
+          >
+            <rect width={layout.cssW} height={layout.cssH} fill="white" />
+            {highlights.map((h) => {
+              const r = highlightBboxRectCss(h, layout);
+              return (
+                <rect
+                  key={h.id}
+                  x={r.x} y={r.y}
+                  width={r.w} height={r.h}
+                  fill="black"
+                  shapeRendering="crispEdges"
+                />
+              );
+            })}
+          </mask>
+        </defs>
+      </svg>
+      <div
+        className="pointer-events-none absolute inset-0 z-[10] bg-[rgba(0,0,0,0.58)]"
+        style={{
+          maskImage: `url(#${maskId})`,
+          WebkitMaskImage: `url(#${maskId})`,
+          maskMode: "luminance",
+        }}
+        aria-hidden
+      />
+      <div className="pointer-events-none absolute inset-0 z-[20]">
+        {highlights.map((h) => (
+          <HighlightButton key={h.id} h={h} /* pointer-events-auto, transparent bg */ />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### Visibility and Usability
+
+- Enforce a minimum bounding-box width and height (e.g. ~12px or ~1% of
+  page width, whichever is larger). Without this, a degenerate normalized
+  bbox collapses to a zero-area button that can't be clicked.
+- On white scanned paper the default neutral border barely reads. Improve
+  contrast with: a slightly stronger dim alpha (~58%), a dark bbox border
+  (e.g. `neutral-800`), and a thin light outer ring (1px white at ~60%
+  opacity). The light ring lifts the box off both the page and the dim
+  fill.
+- A click on a bounding-box button must re-enable highlights when they
+  are off — see "Highlight Visibility Coordination" in the Right Panel
+  section.
 
 ## Right Panel — Extracted Values + Confidence
 
@@ -158,14 +460,15 @@ Toolbar row beneath the header:
 Field rows:
 
 - Type icon (monospace text icon for plain fields).
-- Monospace label (e.g. `vendor_invoice_number`).
+- Humanized field label (e.g. `Vendor Invoice Number`) — see "Field
+  Labels" below.
 - Page badge (`p1`, `p2`).
 - Three-bar signal-style confidence meter: zero bars when confidence is
   null, one bar < 55, two bars < 85, three bars otherwise. Tooltip text:
   `Confidence: 98%` for fractional inputs (`0–1`), the bare number for
   larger inputs, and `No confidence score` for null.
-- The extracted value rendered in a read-only-styled chip on its own
-  row, with overflow scrolling for long values.
+- The extracted value rendered as a humanized chip on its own row,
+  with overflow scrolling for long values. See "Value Formatting" below.
 
 Interactions:
 
@@ -176,6 +479,130 @@ Interactions:
 - Empty filter result shows a quiet inline message; the empty-payload
   state shows a different message that tells the operator the run had
   no extracted fields.
+
+### Value Formatting
+
+The extracted-value chip MUST render a humanized string. `JSON.stringify`
+on the raw IDP value produces unreadable output (`{"text":"INV-112233"}`,
+or worse: decimal-bit triplets). Recurse through the same Struct
+unwrapper used for `bounding_box` (see "IDP Payload Contract") and:
+
+- Prefer keys in this order when present: `text`, `normalized_value`,
+  `extracted_value`. Fall through to the recursive formatter when none
+  match.
+- Format primitives directly: strings as-is; booleans as "Yes" / "No";
+  plain numbers via `toLocaleString`; decimal-bit numbers through the
+  shared decoder.
+- Format dictionaries by joining `"<humanized key>: <humanized value>"`
+  lines.
+- Format lists by joining `humanized(item)` with commas.
+- Detect "list-shaped objects" — dictionaries whose keys are all numeric
+  strings (`"0"`, `"1"`, `"2"`, …) — and format them as lists. Do NOT
+  prefix each value with `0:`, `1:`, etc.
+
+Reference template:
+
+```ts
+import { decodeIdpValue, decodeStructDecimal } from "@/lib/kognitos/idp";
+
+const PREFER_KEYS = ["text", "normalized_value", "extracted_value"];
+
+/** Title-case a snake_case identifier ("vendor_invoice_number" → "Vendor Invoice Number"). */
+export function humanizeFieldName(name: string): string {
+  return name
+    .replace(/[_-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function isListShapedDict(d: Record<string, unknown>): boolean {
+  const keys = Object.keys(d);
+  return keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
+}
+
+export function formatIdpValue(raw: unknown): string {
+  // 1. Unwrap protobuf Value / Struct wrappers + Decimal bits.
+  const v = decodeIdpValue(raw);
+
+  // 2. Primitives.
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "string") return v;
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (typeof v === "number") return Number.isFinite(v) ? v.toLocaleString() : "—";
+
+  // 3. Decimal-bit object (post-unwrap shape, before flat number).
+  const dec = decodeStructDecimal(v);
+  if (dec !== null) return dec.toLocaleString();
+
+  // 4. Lists.
+  if (Array.isArray(v)) return v.map(formatIdpValue).filter(Boolean).join(", ");
+
+  // 5. Dictionaries — prefer text/normalized_value/extracted_value first.
+  if (v && typeof v === "object") {
+    const dict = v as Record<string, unknown>;
+    for (const k of PREFER_KEYS) {
+      if (k in dict) return formatIdpValue(dict[k]);
+    }
+    if (isListShapedDict(dict)) {
+      return Object.keys(dict)
+        .sort((a, b) => Number(a) - Number(b))
+        .map((k) => formatIdpValue(dict[k]))
+        .filter(Boolean)
+        .join(", ");
+    }
+    return Object.entries(dict)
+      .map(([k, val]) => `${humanizeFieldName(k)}: ${formatIdpValue(val)}`)
+      .join("\n");
+  }
+
+  return "—";
+}
+```
+
+### Field Labels — Technical Name vs Humanized
+
+- Keep the technical `name` (e.g. `vendor_invoice_number`) as the row
+  `key`, the value used in logs, and any `data-` attribute used by tests.
+- Render a separate humanized UI label as the row's primary text — title
+  case with `_` replaced by space (`Vendor Invoice Number`).
+- Keep the monospace `name` chip visible as a secondary label so operators
+  can copy the technical id when filing tickets.
+
+```tsx
+<li key={h.name} data-extracted-field-row={h.id}>
+  <button type="button" onPointerEnter={...} onClickCapture={...}>
+    <div className="flex items-center gap-2">
+      <span className="text-[13px] text-zinc-100">{humanizeFieldName(h.name)}</span>
+      <span className="font-mono text-[11px] text-zinc-500">{h.name}</span>
+      <span className="text-[11px] text-zinc-500">p{h.pageNumber}</span>
+      <ConfidenceSignalBars c={h.confidence} />
+    </div>
+    <div className="mt-2.5 …read-only chip styles…">{formatIdpValue(h.rawValue) || "—"}</div>
+  </button>
+</li>
+```
+
+### Highlight Visibility Coordination
+
+- When `highlightsOn === false`, clicking a row, the row's confidence
+  meter, OR a bounding-box button on the document MUST call
+  `setHighlightsOn(true)` before applying focus side-effects. Otherwise
+  the operator clicks a row, sees the page change, but no visible
+  highlight appears — and assumes the viewer is broken.
+- Do NOT short-circuit the focus action on the off→on transition; re-enable
+  AND focus in the same handler so the user sees the box light up
+  immediately.
+
+```ts
+const onActivateField = useCallback((id: string) => {
+  if (!highlightsOnRef.current) setHighlightsOn(true);
+  setFocusedFieldId(id);
+  const h = parsedHighlightsRef.current.find((x) => x.id === id);
+  if (h) setActivePage(h.pageNumber);
+}, []);
+```
 
 ## IDP Payload Contract
 
@@ -191,8 +618,11 @@ Tool-agnostic spec — the parser must accept all of this:
   falling back to `list.items`, then `items`.
 - **Field row:** each item is `{ dictionary: { entries } }` and contains
   `element_type`, `name`, `values` (list of value objects), `page_number`,
-  `confidence`, and `bounding_box` (a nested dictionary with `x`, `y`,
-  `width`, `height`).
+  `confidence`, and `bounding_box`. The bounding box is itself a nested
+  dictionary — decode it through the SAME typed-value/Struct unwrapper used
+  for field values. Do NOT assume `{x, y, width, height}` is a flat object;
+  each component may be a primitive, a protobuf `Value` wrapper, or a
+  `Decimal`-bit object.
 - **Element type alias:** accept both `extracted_field` (legacy) and
   `document_field` (current `book-idp` shape), case-insensitive. Use a
   single `isExtractedFieldElementType` helper — never inline the literal
@@ -206,9 +636,41 @@ Tool-agnostic spec — the parser must accept all of this:
   capped at 28, sign in bit 31). Do **not** use `lo / 2^32` — that
   decoder produced wrong bbox fractions on real payloads.
 - **Bbox coordinate mode:** if `max(x + width, y + height) ≤ 1.0005`,
-  treat the bbox as normalized 0–1 fractions. Otherwise treat it as PDF
+  treat the bbox as normalized 0–1 fractions; otherwise treat it as PDF
   user-space points relative to the PDF.js base viewport at scale 1.
   Both modes resolve into the same percentage layout downstream.
+- **Y-axis convention:** for non-normalized bboxes the Y-axis origin is
+  **not** universal: PDF user space is bottom-left origin (Y up), but
+  IDP can also emit boxes in viewport/image space (top-left origin,
+  Y down). Decide flip-vs-no-flip **per page** by scoring how much each
+  candidate placement of `fieldsOnPage` overlaps the page rectangle,
+  then picking the winning convention for that page. Do NOT assume a
+  single global convention — the same payload can mix conventions
+  across pages.
+
+  Reference scorer:
+
+  ```ts
+  function chooseYAxisFlipForPage(
+    fieldsOnPage: Array<{ bbox: { x: number; y: number; width: number; height: number } }>,
+    pageRect: { width: number; height: number },
+  ): "flip" | "noflip" {
+    function overlap(flip: boolean): number {
+      let area = 0;
+      for (const f of fieldsOnPage) {
+        const y = flip ? pageRect.height - f.bbox.y - f.bbox.height : f.bbox.y;
+        const ix = Math.max(0, Math.min(pageRect.width, f.bbox.x + f.bbox.width)
+          - Math.max(0, f.bbox.x));
+        const iy = Math.max(0, Math.min(pageRect.height, y + f.bbox.height)
+          - Math.max(0, y));
+        area += ix * iy;
+      }
+      return area;
+    }
+    return overlap(true) > overlap(false) ? "flip" : "noflip";
+  }
+  ```
+
 - **Name blocklist:** skip rows whose name is in a small blocklist
   (`payment_recommendation`, `result_type`, `document_count`, `document`,
   `page_count`, `confidence`, empty), or contains `markdown_report`, or
@@ -221,9 +683,44 @@ Two server endpoints owned by the application's adapter layer. The viewer
 consumes URLs only — it does not see Kognitos credentials or file ids.
 
 - **PDF bytes:** stream the document through a server route that resolves
-  the file id from the run inputs and downloads via the Files API. See
+  the file id from the run inputs and downloads via the Files API.
+
+  **Try the workspace-scoped endpoint first** when a workspace id is
+  available — files created under an automation or workspace return `404`
+  from the org-only download endpoint:
+
+  ```
+  organizations/{org}/workspaces/{workspace}/files/{file}:download   ← try first
+  organizations/{org}/files/{file}:download                          ← fallback
+  ```
+
+  Without this fallback chain, half the runs in production silently
+  fail to load the PDF. See
   [`kognitos-api-client/references/runs-api.md`](../../kognitos-api-client/references/runs-api.md)
   for the run shape and the Files API for the download endpoint.
+
+  Reference adapter:
+
+  ```ts
+  export async function downloadKognitosFile(
+    fileId: string,
+    { org, workspace }: { org: string; workspace?: string | null },
+  ): Promise<Response> {
+    const auth = await getKognitosAuthHeaders();
+    if (workspace) {
+      const wsUrl =
+        `${KOGNITOS_BASE}/organizations/${org}/workspaces/${workspace}` +
+        `/files/${fileId}:download`;
+      const wsRes = await fetch(wsUrl, { headers: auth });
+      if (wsRes.ok) return wsRes;
+      // Fall through to org-scoped only on 404; bubble other errors.
+      if (wsRes.status !== 404) return wsRes;
+    }
+    const orgUrl = `${KOGNITOS_BASE}/organizations/${org}/files/${fileId}:download`;
+    return fetch(orgUrl, { headers: auth });
+  }
+  ```
+
 - **Run payload JSON:** a server route that returns the raw payload object
   (the same JSON used to build `KognitosRun`, but unmapped). Log a single
   one-line diagnostic on every fetch:
@@ -237,8 +734,230 @@ consumes URLs only — it does not see Kognitos credentials or file ids.
   the fastest signal — `extractedFieldItemsCount` will go to zero while
   `fieldsListItemsLength` stays positive.
 
+- **Cancellation:** wrap the payload fetch in an `AbortController` and
+  call `controller.abort()` when the dialog closes OR when `runId`
+  changes mid-flight. Optionally abort the PDF fetch the same way. See
+  "Render Lifecycle and Reset → Aborting In-flight Requests".
+
 The viewer fetches both URLs once on mount, keyed by `runId` so changing
-the row resets the in-flight requests cleanly.
+the row resets the in-flight requests cleanly. Mount with `key={runId}`
+on the dialog as defense-in-depth (see "Reset Across Runs").
+
+## Embedding the Viewer in a Chat Surface
+
+When an operator clicks a document attachment that the agent surfaced
+inline in chat, the click must mount the same in-app dialog the dashboard
+uses — not an OS-level browser popup window. Browser popups defeat the
+spotlight chrome, lose IDP overlays entirely, and frequently get blocked.
+
+The right shape is a small per-attachment policy at the click site that
+routes to one of three open modes:
+
+| Open mode | Trigger condition | Surface | Capabilities |
+|---|---|---|---|
+| Rich PDF viewer | PDF mime AND non-null `runId` | In-app `Dialog` mounting `<InvoicePdfHighlightViewer />` | Bounding boxes, confidence panel, zoom, page nav, download |
+| In-app image dialog | image mime AND any `href` | In-app `Dialog` showing `<img>` `object-contain` on a dark surround | Same chrome as the PDF dialog; scroll/zoom by browser default |
+| Browser popup (last resort) | Neither of the above | `window.open(href, "_blank", DOC_POPUP_FEATURES)` | None of the rich UI; only when nothing else applies |
+
+### MIME Sniffing
+
+Agents frequently surface attachments with no `mimeType` and a generic
+filename. The URL almost always still ends in `.pdf` / `.png` / etc.
+Sniff both:
+
+```ts
+/**
+ * Infer a MIME type from a filename / label or, failing that, the file
+ * URL path. Sniffing both keeps PDFs out of the popup-window fallback
+ * when the agent only gives us a file id (no extension on the label).
+ */
+export function inferMimeFromName(
+  name: string | null | undefined,
+  url?: string | null,
+): string | null {
+  const sources: string[] = [];
+  if (name) sources.push(name);
+  if (url) {
+    const path = url.split(/[?#]/, 1)[0]; // strip query/hash
+    if (path) sources.push(path);
+  }
+  for (const s of sources) {
+    const m = s.toLowerCase().match(/\.([a-z0-9]+)$/);
+    if (!m) continue;
+    switch (m[1]) {
+      case "pdf": return "application/pdf";
+      case "png": return "image/png";
+      case "jpg":
+      case "jpeg": return "image/jpeg";
+      case "gif": return "image/gif";
+      case "webp": return "image/webp";
+      case "svg": return "image/svg+xml";
+      default: continue;
+    }
+  }
+  return null;
+}
+```
+
+### Discriminated-Union Open Callback
+
+Use one open callback that accepts a discriminated union — chat-tree
+intermediaries don't need to learn about new variants:
+
+```ts
+type ChatPdfViewerOpen = { pdfUrl: string; runId: string; label: string };
+type ChatImagePreviewOpen = { url: string; label: string; mimeType?: string | null };
+
+export type ChatDocumentViewerOpen =
+  | ({ kind: "pdf" } & ChatPdfViewerOpen)
+  | ({ kind: "image" } & ChatImagePreviewOpen);
+
+// Page-level setter routes to the right state, so the chat tree only
+// needs to thread one prop.
+const handleOpenAttachment = useCallback((args: ChatDocumentViewerOpen) => {
+  if (args.kind === "pdf") {
+    const { pdfUrl, runId, label } = args;
+    setDocumentViewer({ pdfUrl, runId, label });
+    return;
+  }
+  const { url, label, mimeType } = args;
+  setImagePreview({ url, label, mimeType: mimeType ?? null });
+}, []);
+```
+
+### Per-Attachment Click Handler
+
+```tsx
+function ChatAttachmentCard({
+  data,           // ChatDocumentPreviewData from the reducer
+  runId,          // null when the chat exception has no run
+  onOpenDocumentViewer,
+}: Props) {
+  const display = data.label || "Attached document";
+  const href = data.url
+    ? data.url
+    : data.fileId
+      ? `/api/kognitos/files/${encodeURIComponent(data.fileId)}`
+      : null;
+  const effectiveMime = data.mimeType ?? inferMimeFromName(data.label, href);
+
+  const isPdf = effectiveMime === "application/pdf";
+  const isImage = !!effectiveMime && effectiveMime.startsWith("image/");
+  const canOpenInViewer = !!href && isPdf && !!runId;
+  const canOpenInImageDialog = !!href && isImage;
+
+  const handleOpen = useCallback(() => {
+    if (!href) return;
+    if (canOpenInViewer && runId) {
+      onOpenDocumentViewer({ kind: "pdf", pdfUrl: href, runId, label: display });
+      return;
+    }
+    if (canOpenInImageDialog) {
+      onOpenDocumentViewer({
+        kind: "image", url: href, label: display, mimeType: effectiveMime,
+      });
+      return;
+    }
+    // Last-resort fallback. Sized popup with restricted chrome,
+    // graceful-degrading to a plain new tab when popups are blocked.
+    const win = window.open(href, "_blank", DOC_POPUP_FEATURES);
+    if (!win) window.open(href, "_blank", "noopener,noreferrer");
+  }, [canOpenInImageDialog, canOpenInViewer, display, effectiveMime, href, onOpenDocumentViewer, runId]);
+
+  // …render a button with handleOpen, plus a small "Viewer" / "Preview"
+  // affordance pill so users know what kind of surface they'll get.
+}
+
+const DOC_POPUP_FEATURES =
+  "popup=yes,width=1000,height=800,resizable=yes,scrollbars=yes,toolbar=no,menubar=no";
+```
+
+### Image Dialog
+
+The image dialog reuses the same dark-surround chrome as the PDF viewer
+so attachment type doesn't introduce a chrome jump:
+
+```tsx
+function ChatImagePreviewDialog({ data, onClose }: {
+  data: ChatImagePreviewOpen | null;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={data != null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        centerFlex
+        showCloseButton
+        className="flex h-[min(82.8vh,828px)] w-[min(88.2vw,82.8rem)] max-w-[min(88.2vw,82.8rem)] flex-col gap-0 overflow-hidden border border-white/[0.08] bg-zinc-900 p-0 text-zinc-100 shadow-xl shadow-black/20"
+      >
+        <DialogHeader className="shrink-0 border-b border-white/[0.07] bg-zinc-900 px-4 py-2 text-left">
+          <DialogTitle className="text-base font-medium text-zinc-50">
+            {data?.label ?? "Image preview"}
+          </DialogTitle>
+        </DialogHeader>
+        {data ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[#323234] p-6">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={data.url}
+              alt={data.label}
+              className="block max-h-full max-w-full select-none object-contain"
+              loading="eager"
+              draggable={false}
+            />
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+### Empty IDP State Inside the Viewer
+
+Chat-launched runs frequently have no IDP output (e.g. agent attached a
+PDF without running it through `book-idp`). The viewer must render the
+PDF but tell the operator why the bounding-box layer is empty — otherwise
+the chrome looks "broken".
+
+```tsx
+{!payloadLoading && !payloadError && parsedHighlights.length === 0 ? (
+  <div
+    role="status"
+    aria-live="polite"
+    className="shrink-0 border-b border-white/[0.06] bg-zinc-900/80 px-4 py-2"
+  >
+    <div className="flex items-start gap-2 text-zinc-300">
+      <Info className="mt-[1px] size-3.5 shrink-0 text-zinc-400" aria-hidden />
+      <p className="text-[12px] leading-snug">
+        <span className="font-medium text-zinc-200">
+          No extracted fields for this run.
+        </span>{" "}
+        <span className="text-zinc-400">
+          The document is shown without bounding boxes or a confidence
+          panel because this run has no IDP output.
+        </span>
+      </p>
+    </div>
+  </div>
+) : null}
+```
+
+Track an explicit `payloadLoading` state alongside `payloadError` so the
+banner only appears once the fetch has truly settled — flashing on every
+load is worse than silent.
+
+### Dialog Title Parity
+
+All entry points — dashboard table cell, chat attachment, expert queue —
+should display the document's filename in the dialog title, not a generic
+label like "Document Processing". This keeps cross-surface affordances
+matching the surface the operator just left.
+
+```tsx
+<DialogTitle>
+  {invoiceViewer?.label ?? "Document Processing"}
+</DialogTitle>
+```
 
 ## App Review Questions
 
@@ -255,4 +974,33 @@ the row resets the in-flight requests cleanly.
 - Does the toolbar's `pointer-events-none` container leave the document
   clickable beneath it, with the pill itself re-enabling pointer events?
 - When the parser yields zero highlights, does the UI render an explicit
-  empty-state message instead of a blank overlay?
+  empty-state message (banner, not a small text strip) instead of a
+  blank overlay?
+- Does the PDF.js worker load from a same-origin URL pinned to the app's
+  `pdfjs-dist` version, copied during install or build (no CDN)?
+- Does the PDF download path try the workspace-scoped Files endpoint
+  before falling back to org-scoped?
+- Does the canvas mount as soon as the `PDFDocumentProxy` resolves, or
+  does it wait on layout values that are themselves derived from
+  `page.render()`?
+- Does the viewer set the initial page to `min(field.pageNumber)` instead
+  of always `1`?
+- Are the SVG mask ids generated via `useId()` and sanitized for SVG, so
+  two open dialogs (or hydration) don't share a `url(#…)` reference?
+- Does clicking a panel row, confidence meter, or bounding box re-enable
+  highlights when they're toggled off?
+- Does the value chip in the right panel resolve nested dictionaries,
+  lists, and decimal-bit numbers without ever falling back to
+  `JSON.stringify`?
+- Does the dialog use `key={runId}` (or equivalent) so refs and state
+  reset when switching runs?
+- Are in-flight payload requests aborted via `AbortController` on dialog
+  close and `runId` change?
+- For non-normalized bboxes, is the Y-axis flip decision made per page by
+  overlap scoring, not by a global assumption?
+- For chat-surfaced attachments: do PDFs route to the rich viewer when a
+  `runId` is present, do images route to an in-app modal, and is the
+  OS-level browser popup the last-resort fallback (not the default)?
+- For chat-surfaced attachments: does MIME sniffing cover both the
+  filename AND the URL path, so an extensionless label with a `.pdf`
+  URL still hits the rich viewer?
