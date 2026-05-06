@@ -16,6 +16,63 @@ This guide is opinionated. Every sub-rule below is in response to a real
 failure mode that a previous implementation hit and a downstream consumer
 noticed. If you skip a rule, expect the failure mode to come back.
 
+## At-a-Glance
+
+**What this document is.** The implementation contract for any
+Kognitos-app document preview surface that renders a PDF (or image)
+plus IDP-extracted fields. Specifies the parser shape, the layout, the
+render pipeline, the overlay model, and the right-panel UX.
+
+**When to read it.** Before starting work that mounts a document
+preview, before reviewing a PR that touches one, and whenever the
+upstream `idp_extraction_results` shape changes.
+
+**Who must follow it.** Every app implementation, regardless of
+framework. The component templates here are reference patterns; the
+**rules** in each section are the contract. Where rules and templates
+disagree, the rules win.
+
+**How sections are organized.** Layout-first (Window Chrome → Page Rail
+→ Render Lifecycle → Document Positioning → Bottom Toolbar → Bounding
+Box Overlays → Right Panel), then data contract (IDP Payload Contract),
+then plumbing (Document Fetch and Payload Fetch, Embedding in Chat,
+State Coverage). Skim the layout sections to plan the UI, then drop
+into the contracts when you start writing the parser.
+
+## Composition Diagram
+
+The dialog is a single composite. Each numbered region below maps to a
+named section later in this document.
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  ① Dialog header  (title = filename / invoice number, close ✕)    │
+├──────────┬───────────────────────────────────────────┬─────────────┤
+│          │                                           │             │
+│          │                                           │   ⑥ Right   │
+│  ② Page  │           ③ Document workspace            │     panel   │
+│   rail   │           (canvas + overlay layers)       │   (fields,  │
+│  (1 col, │                                           │   confidence│
+│   thumb- │                                           │    bars)    │
+│   nails) │                                           │             │
+│          │                                           │             │
+│          │                                           │             │
+│          │     ┌───────── ④ Bottom toolbar ─────┐    │             │
+│          │     │ ⊖  ⊕  ⤢  ✦  ⬇   │   ⟷ panel ▣ │    │             │
+│          │     └─────────────────────────────────┘    │             │
+└──────────┴───────────────────────────────────────────┴─────────────┘
+   ②: Page Rail (Multi-page Documents)
+   ③: Render Lifecycle, Document Positioning, Bounding Box Overlays
+   ④: Bottom Toolbar (Document Controls)
+   ⑤: (state — see State Coverage)
+   ⑥: Right Panel — Extracted Values + Confidence
+```
+
+The page rail (②) is hidden for single-page documents. The right panel
+(⑥) is collapsible but reserves its width even while collapsed (see
+"Document Positioning"). The bottom toolbar (④) floats inside the
+workspace — it does not occupy a separate row.
+
 ## Default Expectations
 
 - Treat the run payload as canonical. If the parser yields zero highlights,
@@ -85,17 +142,63 @@ console.log(`copied ${src} → ${dst}`);
 Reference viewer init:
 
 ```ts
+// Dynamic import — pdfjs-dist references DOM globals (Window, document,
+// fetch) and crashes a Next.js / Remix / Nuxt server-side render if
+// imported at module scope. Always import inside the effect that
+// needs it, or behind a `dynamic(() => …, { ssr: false })` boundary.
 const pdfjs = await import("pdfjs-dist");
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.mjs";
 const task = pdfjs.getDocument({ url: pdfUrl, withCredentials: false });
 const doc = await task.promise;
 ```
 
+> **Required behavior.** PDF.js MUST be loaded via dynamic import (or
+> framework-specific `ssr: false` wrapper). Static `import "pdfjs-dist"`
+> at the top of any module that ends up in a server bundle will fail
+> with `ReferenceError: window is not defined` at build or first
+> request. The error message rarely points at the offending import,
+> which makes the failure expensive to diagnose.
+
+### Server Routes
+
+Two server routes own the Kognitos contact surface. The viewer fetches
+both via the application's adapter layer; it never sees Kognitos
+credentials, file ids, or the Files API directly. The full
+implementation lives in "Document Fetch and Payload Fetch" later in
+this doc — this subsection is the at-a-glance index.
+
+| Route | Purpose | Returns | Client behavior |
+|---|---|---|---|
+| `GET /api/.../files/{fileId}` (app-defined) | Stream the document bytes through a server proxy that resolves workspace-vs-org scope. | Binary PDF / image stream. | Pass the route URL straight to `pdfjs.getDocument({ url })` or to an `<img src>`. |
+| `GET /api/.../runs/{runId}/payload` (app-defined) | Return the raw IDP payload object for one run. | JSON `{ payload: { ... } }`. | Run through the parser to produce `FieldHighlight[]`; do NOT walk the protobuf shape in the UI. |
+
+Both routes:
+
+- Accept the request from the operator's session, authenticate to
+  Kognitos using the *server's* credentials (never expose a Kognitos
+  token to the browser), and forward back without transformation.
+- Cache nothing implicitly — PDF bytes are large and operator-private,
+  IDP payloads change as `book-idp` versions roll. Cache headers
+  belong on the upstream Kognitos response, not the proxy.
+- The download route MUST implement the workspace-then-org fallback
+  chain documented in "Document Fetch and Payload Fetch" → "PDF
+  bytes". Skipping the fallback means workspace-scoped files 404
+  silently and the viewer hangs at "loading PDF" with no useful error.
+
 ## Window Chrome and Color Scheme
 
 The preview is a centered modal with a viewport-relative size, not a
 full-screen takeover. Use a three-band dark palette so the document itself
 is the only light surface — the eye lands on the page automatically.
+
+> **Design tokens are a recipe, not a literal palette.** The token
+> classes shown below (`zinc-*`, `bg-zinc-900/80`, etc.) are the
+> reference defaults from the in-repo viewer. Apps with their own
+> design system should map these to their own tokens — what is
+> contractual is the *contrast hierarchy* (rail/panel slightly lighter
+> than the dialog shell, workspace mid-dark, document the only light
+> surface), not the specific token names. If your design system has a
+> "modal" primitive, use it; do not re-skin a generic surface.
 
 | Surface | Role | Intent |
 |---|---|---|
@@ -115,6 +218,15 @@ Other rules:
   close button. Title is the document filename when known (e.g. invoice
   number), falling back to a generic "Document Processing" label. The
   toolbar lives in the workspace footer (see below).
+
+> **Modal vs full-screen is an app convention.** The reference
+> implementation uses a centered modal sized at ~90vw × 90vh. Apps with
+> a long workflow (e.g. a side-by-side review experience) may instead
+> mount the same composition in a route or a side panel. What's
+> universal is: stays in-app (no `_blank` tab/window) and preserves the
+> three-column composition above. If your app uses a side-panel shape,
+> drop the dialog header and let the host surface own the title and
+> close affordance.
 
 ## Page Rail (Multi-page Documents)
 
@@ -525,7 +637,8 @@ A pill-shaped, floating toolbar pinned to the bottom of the workspace.
 
 Rules:
 
-- Buttons are square (~31×31 px), neutral hover, tooltip-on-top.
+- Buttons are square (~31×31 px **reference default** — apps may tune
+  to match their button density), neutral hover, tooltip-on-top.
 - The container row is `pointer-events-none` so it does not block document
   clicks; the pill itself re-enables pointer events. This matters when the
   toolbar overlaps the bottom of the document during zoom.
@@ -534,6 +647,12 @@ Rules:
   zoom and toggle clicks at the bottom of the workspace.
 - Tooltips switch text by state (e.g. "Show field highlights" /
   "Hide field highlights"). Generic "Toggle" labels are not enough.
+- Tooltips MUST be wrapped in a single `<TooltipProvider>` (Radix-style
+  scoping) at or above the dialog root. Without one, every tooltip
+  re-mounts its own provider, opening times stagger by ~150ms and the
+  toolbar feels laggy. If your design system already provides a
+  TooltipProvider at the app shell, you do not need to add another
+  one — but verify it is in the dialog's React tree.
 - Disabled-state for zoom limits is required — do not let the operator
   click into a no-op.
 - Min/max zoom and step factor are constants near the component. Pick a
@@ -541,6 +660,16 @@ Rules:
   halve the perceived size.
 - The toolbar re-centers itself on workspace resize via the same fit
   measurement used for the document.
+
+> **Pixel sizes throughout this doc are reference defaults.** Numbers
+> like ~31×31 px (toolbar buttons), ~96px CSS (thumbnail width),
+> ~120px (page rail width), ~320px (right panel width), and the
+> 90vw × 90vh dialog size are the values used in the in-repo reference
+> viewer. Apps with different design-system densities can tune them.
+> What is fixed is the *relationship* (rail thinner than panel, panel
+> thinner than workspace) and the constraints called out in each
+> section (e.g. "the right panel reserves its width even while
+> collapsed" — the number itself can change).
 
 ## Bounding Box Overlays
 
@@ -1503,6 +1632,54 @@ matching the surface the operator just left.
   {invoiceViewer?.label ?? "Document Processing"}
 </DialogTitle>
 ```
+
+### Inline Preview is Optional
+
+Embedding a document preview in chat is one of several entry points,
+not a required one. Apps that don't expose chat document attachments
+can skip this entire section — the dashboard table is the canonical
+entry point, and the dialog mounts the same way regardless of trigger.
+
+What is **not** optional, even when chat embedding is in scope:
+
+- The dialog itself, mounted with `key={runId}`, with the same chrome
+  and toolbar as the dashboard entry.
+- Workspace-then-org Files API fallback in the download adapter, since
+  chat-attached files are frequently workspace-scoped.
+- Dialog title parity (the filename, not a generic label).
+
+If the app surfaces inline previews in additional places (expert queue
+row, audit-log inspector, anywhere else), each entry point routes
+through the same `handleOpenAttachment` shape and the same dialog
+component. There is exactly one viewer per app — entry points
+multiply, the renderer does not.
+
+## State Coverage
+
+Every viewer must handle the states below explicitly. Silent
+fall-through is the failure mode that "the viewer hangs" reports
+typically describe — a state was reached and no UI was wired for it.
+
+| State | Trigger | Required UI | Notes |
+|---|---|---|---|
+| `idle` | Dialog mounted, fetches not yet kicked off | Spinner or skeleton in workspace, empty toolbar/panel chrome | First frame after mount; lasts ≤ one effect cycle. |
+| `pdf-loading` | `pdfjs.getDocument()` promise in flight | "Loading PDF…" overlay in workspace, toolbar disabled | Show after `idle`, before `PDFDocumentProxy` resolves. |
+| `pdf-error` | PDF fetch threw or `getDocument` rejected | Error banner in workspace with `Retry` action; toolbar disabled; right panel still loads independently | Distinguish 404 (download adapter URL) from network error in the message. |
+| `payload-loading` | Run-payload fetch in flight | Skeleton rows in right panel, page rail (if any) shows page count but no field-count badges | Independent of PDF state — the two fetches race in parallel. |
+| `payload-error` | Run-payload fetch threw | Error banner inside right panel ("Could not load extracted fields"), document still rendered | Do NOT block the document on payload errors. |
+| `payload-empty` | Payload settled with zero highlights | The "no extracted fields for this run" banner from "IDP Empty State"; right panel hidden or shows empty-state | Different message from `payload-error`. |
+| `ready` | Both PDF and payload settled, fields > 0 | Document, overlays, toolbar, right panel all interactive | The default steady state. |
+| `rendering-page` | `activePage` change, `page.render()` in flight | "Rendering…" overlay (lightweight) on the active page surface only; rail and panel stay interactive | Common — a page change between two `ready` states. |
+| `render-cancelled` | Previous `RenderTask.cancel()` is awaiting cleanup before re-render | No UI change required; eat the `RenderingCancelledException` silently | See "Render-task Cancellation". |
+| `highlights-off` | Operator toggled the highlight overlay off | Toolbar toggle pressed, dim layer hidden, bbox buttons hidden, panel rows still clickable | Click on any panel row re-enables — see "Highlight Visibility Coordination". |
+| `panel-collapsed` | Operator collapsed the right panel | Workspace claims the freed width up to the locked fit cap (does not enlarge the document) | See "Document Positioning". |
+| `closing` | Dialog closed mid-flight | All `AbortController`s aborted, `RenderTask`s cancelled, `pendingScrollRef` cleared, `highlightsOn` reset | See "Aborting In-flight Requests" and "Reset Across Runs". |
+
+A small state-machine ref or `useReducer` is fine here — the explicit
+goal is that no production state is reached without a UI transition,
+not to mandate XState. If the implementation uses ad-hoc booleans
+(`isLoading`, `hasError`), audit them against this table at review
+time.
 
 ## App Review Questions
 

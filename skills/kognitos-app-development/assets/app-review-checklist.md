@@ -87,3 +87,24 @@
 - The dialog title shows the document filename across all entry points
   (dashboard table, chat attachment, expert queue), not a generic
   "Document Processing" label.
+- `pdfjs-dist` is loaded via dynamic `import("pdfjs-dist")` (or a
+  framework `ssr: false` boundary) so server-rendered surfaces don't
+  crash with `ReferenceError: window is not defined`.
+- Toolbar tooltips render under a single Radix-style `<TooltipProvider>`
+  in the dialog tree (or inherit one from the app shell), not one
+  provider per tooltip.
+- The viewer treats the Window Chrome palette and the pixel sizes
+  (~31×31 toolbar buttons, ~96px thumbnails, ~120px page rail, ~320px
+  panel, 90vw × 90vh dialog) as **reference defaults** — apps may map
+  to their own design tokens and densities, but preserve the contrast
+  hierarchy and the relative width relationships called out in each
+  section.
+- Every viewer state from "State Coverage" has an explicit UI
+  transition: `idle`, `pdf-loading`, `pdf-error`, `payload-loading`,
+  `payload-error`, `payload-empty`, `ready`, `rendering-page`,
+  `render-cancelled`, `highlights-off`, `panel-collapsed`, `closing`.
+  Silent fall-through on any of these is the failure mode behind
+  "the viewer hangs" reports.
+- The two server routes (file-stream proxy and run-payload JSON)
+  authenticate to Kognitos using server credentials only; no Kognitos
+  token reaches the browser.
