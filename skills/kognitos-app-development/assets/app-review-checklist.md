@@ -25,6 +25,15 @@
 - Hover and focus state are bidirectional between overlay boxes and
   panel rows; activating a row jumps the document to the right page and
   scrolls both the row and the box into view.
+- Cross-surface hit targets are wired via `data-field-box-id` and
+  `data-field-row-id`, not refs or class scans.
+- Cross-surface scrolling re-attempts across multiple
+  `requestAnimationFrame` ticks (~3) to survive the layout commit gap
+  after `activePage` changes; pending scrolls are replayed on the next
+  layout effect.
+- Bounding-box buttons activate via `onClickCapture` (or call
+  `setHighlightsOn(true)` before any `stopPropagation`) so the off→on
+  highlight transition runs before any ancestor bubble-phase handler.
 - When the parser yields zero highlights, the UI shows an explicit
   empty-state message (banner, not a small text strip) instead of a
   blank overlay.
