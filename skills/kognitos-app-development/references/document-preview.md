@@ -794,27 +794,17 @@ Header:
 - Pill counter ("13 Fields", with the singular spelled out at 1).
 - Close button.
 
-Toolbar row beneath the header:
-
-- Page filter dropdown — "All fields" plus one entry per page present
-  in the parsed highlights ("Page 1 only", "Page 2 only", …).
-- Search toggle — opens a single-line filter input below the toolbar.
-  Input filters by label or value, case-insensitive, trimmed.
-- Sort cycle — one icon-button that cycles through three modes: page +
-  name, name A–Z, confidence high-first.
-
-Field rows:
+Field rows (see "Field Row Layout" below for the full template):
 
 - Type icon (monospace text icon for plain fields).
 - Humanized field label (e.g. `Vendor Invoice Number`) — see "Field
   Labels" below.
 - Page badge (`p1`, `p2`).
-- Three-bar signal-style confidence meter: zero bars when confidence is
-  null, one bar < 55, two bars < 85, three bars otherwise. Tooltip text:
-  `Confidence: 98%` for fractional inputs (`0–1`), the bare number for
-  larger inputs, and `No confidence score` for null.
-- The extracted value rendered as a humanized chip on its own row,
-  with overflow scrolling for long values. See "Value Formatting" below.
+- Three-bar signal-style confidence meter — see "Confidence Signal
+  Bars" below.
+- The extracted value rendered as a humanized chip on its own row, with
+  explicit overflow constraints — see "Read-only Value Chip" and
+  "Value Formatting" below.
 
 Interactions:
 
@@ -825,6 +815,205 @@ Interactions:
 - Empty filter result shows a quiet inline message; the empty-payload
   state shows a different message that tells the operator the run had
   no extracted fields.
+
+### Toolbar Row
+
+The toolbar sits between the panel header and the field list. It is
+single-row at the panel's typical width (~320px) and wraps to two rows
+only when search is active.
+
+| Control | Behavior | Empty state |
+|---|---|---|
+| Page filter (dropdown) | "All fields" by default; one entry per page **present in the parsed highlights** — never per page in the PDF. Selecting a page filters the field list to that page AND sets `activePage`. | When only one page has fields, render as a static label, not a dropdown. |
+| Search toggle (icon-button) | Toggles a single-line filter input that drops in **below** the toolbar (does not push the field list off-screen). Input filters case-insensitively across the humanized label, the technical name, and the formatted value. Trim whitespace before matching. | Hide the input when toggled off; reset query when toggled off, not when the dialog closes. |
+| Sort cycle (icon-button) | One button that cycles through three modes: `page + name` (default), `name A–Z`, `confidence high-first`. The icon swaps per mode; the tooltip names the **next** mode (`Sort by name`, `Sort by confidence`, `Sort by page`). | Disabled when fewer than 2 fields exist. |
+
+Rules:
+
+- All three controls are square icon-buttons (~28×28 px), not text. The
+  panel is too narrow to host text-bearing controls without crowding
+  the field list.
+- Tooltips are mandatory — operators discover modes by hover, not by
+  trial and error.
+- The page-filter dropdown is the **only** control that side-effects
+  `activePage`. Sort and search must not navigate the document.
+- Search and sort state are panel-local, not viewer-local. Reset on
+  dialog close (not on `runId` change inside an open dialog) so
+  the operator can compare two runs without losing their filter.
+
+```tsx
+<div className="flex items-center gap-1.5 border-b border-white/[0.06] px-2 py-1.5">
+  <PageFilterDropdown pages={pagesWithFields} value={pageFilter} onChange={setPageFilter} />
+  <span className="ml-auto" />
+  <IconButton aria-label={searchOpen ? "Hide search" : "Search fields"} aria-pressed={searchOpen} onClick={toggleSearch}>
+    <Search className="size-4" />
+  </IconButton>
+  <IconButton aria-label={sortNextLabel(sortMode)} onClick={cycleSortMode}>
+    <SortIcon mode={sortMode} className="size-4" />
+  </IconButton>
+</div>
+{searchOpen ? (
+  <input
+    type="search"
+    className="mx-2 mb-1.5 rounded border border-white/[0.06] bg-zinc-900/60 px-2 py-1 text-[12px] text-zinc-100 placeholder:text-zinc-500"
+    placeholder="Filter fields"
+    value={query}
+    onChange={(e) => setQuery(e.target.value)}
+    autoFocus
+  />
+) : null}
+```
+
+### Confidence Signal Bars
+
+A three-bar meter, not a percentage badge. The bars communicate
+"low / medium / high" at a glance and stay legible at panel widths
+where digits would crowd the row.
+
+Visual contract:
+
+- Three vertical bars, increasing height left → right (e.g. 4 / 7 / 10
+  px), 2px wide, 1.5px gap. Container is fixed-size so the row layout
+  doesn't reflow per field.
+- Bar color encodes the **bucket**, not the raw number: `low` (zinc /
+  red), `medium` (amber), `high` (emerald). Inactive bars use a faint
+  outline only.
+- Tooltip text is mandatory and varies by input shape:
+  - Fractional input (`0–1`) → `"Confidence: 98%"` (rounded).
+  - Larger input → render the bare number (`"Confidence: 73"`).
+  - `null` / missing → `"No confidence score"`.
+
+Bucketing:
+
+| Confidence (normalized to 0–100) | Bars lit | Bucket |
+|---|---|---|
+| `null` / missing | 0 | n/a |
+| `< 55` | 1 | low |
+| `< 85` | 2 | medium |
+| `≥ 85` | 3 | high |
+
+Reference template:
+
+```tsx
+function ConfidenceSignalBars({ c }: { c: number | null }) {
+  const norm = c == null ? null : c <= 1 ? c * 100 : c;
+  const lit = norm == null ? 0 : norm < 55 ? 1 : norm < 85 ? 2 : 3;
+  const bucket: "low" | "medium" | "high" | "none" =
+    norm == null ? "none" : norm < 55 ? "low" : norm < 85 ? "medium" : "high";
+  const fill = {
+    low: "bg-rose-400",
+    medium: "bg-amber-400",
+    high: "bg-emerald-400",
+    none: "bg-transparent",
+  }[bucket];
+  const tooltip =
+    norm == null
+      ? "No confidence score"
+      : c! <= 1
+      ? `Confidence: ${Math.round(norm)}%`
+      : `Confidence: ${Math.round(norm)}`;
+
+  return (
+    <span
+      role="img"
+      aria-label={tooltip}
+      title={tooltip}
+      className="inline-flex items-end gap-[1.5px] align-middle"
+    >
+      {[4, 7, 10].map((h, i) => (
+        <span
+          key={i}
+          style={{ height: `${h}px`, width: "2px" }}
+          className={[
+            "block rounded-[1px] border border-white/[0.18]",
+            i < lit ? fill : "bg-transparent",
+          ].join(" ")}
+        />
+      ))}
+    </span>
+  );
+}
+```
+
+### Read-only Value Chip
+
+The extracted value is its own row beneath the field label, not
+adjacent to it. At panel widths, side-by-side label + value gives both
+fields too little room and forces ellipsis on values that operators
+specifically came to read.
+
+Constraints:
+
+- Background: `bg-zinc-900/60`. Border: 1px `border-white/[0.06]`.
+  Padding: `px-2 py-1.5`.
+- Font: 13px sans for normal values. Switch to mono when the value
+  matches `^[A-Z0-9_\-./]+$` and is at most 64 chars (invoice numbers,
+  IDs) so digits align cleanly.
+- **Single-line by default** with horizontal `overflow-x-auto`. Multi-
+  line values (formatted dictionaries) get `whitespace-pre-wrap` AND a
+  `max-h-[120px]` with `overflow-y-auto`. Without the height cap, a
+  large nested dictionary balloons the row past the viewport.
+- Empty/null formatted output (`"—"` from `formatIdpValue`) renders as
+  a quieter color (`text-zinc-500`) so the operator can scan past
+  empty fields quickly.
+- Selectable text (`select-text`) — operators copy invoice numbers and
+  PO numbers from this chip directly into other systems.
+
+```tsx
+function ValueChip({ raw }: { raw: unknown }) {
+  const formatted = formatIdpValue(raw) || "—";
+  const isEmpty = formatted === "—";
+  const isMonoCandidate =
+    !isEmpty && formatted.length <= 64 && /^[A-Z0-9_\-./]+$/.test(formatted);
+  const isMultiline = formatted.includes("\n");
+
+  return (
+    <div
+      className={[
+        "select-text rounded border border-white/[0.06] bg-zinc-900/60 px-2 py-1.5 text-[13px]",
+        isEmpty ? "text-zinc-500" : "text-zinc-100",
+        isMonoCandidate ? "font-mono" : "",
+        isMultiline
+          ? "max-h-[120px] overflow-y-auto whitespace-pre-wrap"
+          : "overflow-x-auto whitespace-nowrap",
+      ].join(" ")}
+    >
+      {formatted}
+    </div>
+  );
+}
+```
+
+### Field Row Layout
+
+Composes the above into a single row. The label cluster (icon, label,
+mono name, page badge, signal bars) shares one flex line; the value
+chip drops to the next line so it can claim full row width.
+
+```tsx
+<li
+  key={h.name}
+  data-field-row-id={h.id}
+  className="border-b border-white/[0.04] last:border-b-0"
+>
+  <button
+    type="button"
+    onPointerEnter={() => setLinkedHoverFieldId(h.id)}
+    onPointerLeave={() => setLinkedHoverFieldId((cur) => (cur === h.id ? null : cur))}
+    onClickCapture={() => onActivateField(h.id)}
+    className="block w-full px-2.5 py-2 text-left hover:bg-white/[0.03]"
+  >
+    <div className="flex items-center gap-2">
+      <FieldTypeGlyph kind={h.elementType} />
+      <span className="truncate text-[13px] text-zinc-100">{humanizeFieldName(h.name)}</span>
+      <span className="truncate font-mono text-[11px] text-zinc-500">{h.name}</span>
+      <span className="ml-auto text-[11px] text-zinc-500">p{h.pageNumber}</span>
+      <ConfidenceSignalBars c={h.confidence} />
+    </div>
+    <ValueChip raw={h.rawValue} />
+  </button>
+</li>
+```
 
 ### Value Formatting
 
@@ -909,26 +1098,15 @@ export function formatIdpValue(raw: unknown): string {
 
 ### Field Labels — Technical Name vs Humanized
 
-- Keep the technical `name` (e.g. `vendor_invoice_number`) as the row
-  `key`, the value used in logs, and any `data-` attribute used by tests.
+- Keep the technical `name` (e.g. `vendor_invoice_number`) as the React
+  `key`, the value used in logs, and the value behind the
+  `data-field-row-id` attribute used by hit-target wiring.
 - Render a separate humanized UI label as the row's primary text — title
   case with `_` replaced by space (`Vendor Invoice Number`).
 - Keep the monospace `name` chip visible as a secondary label so operators
   can copy the technical id when filing tickets.
-
-```tsx
-<li key={h.name} data-extracted-field-row={h.id}>
-  <button type="button" onPointerEnter={...} onClickCapture={...}>
-    <div className="flex items-center gap-2">
-      <span className="text-[13px] text-zinc-100">{humanizeFieldName(h.name)}</span>
-      <span className="font-mono text-[11px] text-zinc-500">{h.name}</span>
-      <span className="text-[11px] text-zinc-500">p{h.pageNumber}</span>
-      <ConfidenceSignalBars c={h.confidence} />
-    </div>
-    <div className="mt-2.5 …read-only chip styles…">{formatIdpValue(h.rawValue) || "—"}</div>
-  </button>
-</li>
-```
+- The full row composition lives in "Field Row Layout" above so the
+  template doesn't drift between sections.
 
 ### Highlight Visibility Coordination
 

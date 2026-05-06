@@ -67,6 +67,17 @@
 - The right-panel value chip recursively unwraps nested dictionaries,
   lists, and decimal-bit numbers; it never falls back to
   `JSON.stringify`.
+- The right-panel value chip caps multi-line height (`max-h-[120px]`)
+  and constrains single-line values to horizontal overflow so a large
+  formatted dictionary never balloons the row past the viewport.
+- The right-panel toolbar row is icon-only (page filter, search toggle,
+  sort cycle) with mandatory tooltips; only the page filter
+  side-effects `activePage`, and search/sort state survives a
+  same-dialog `runId` change.
+- The confidence indicator is a three-bar signal meter, not a
+  percentage badge — bucketed `<55` / `<85` / `≥85` with bucket-encoded
+  color and an aria-label tooltip that adapts to fractional vs.
+  percentage inputs.
 - For non-normalized bounding boxes, the Y-axis flip decision is made
   per page via overlap scoring against the page rectangle.
 - For chat-surfaced attachments: PDFs with a `runId` route to the rich
