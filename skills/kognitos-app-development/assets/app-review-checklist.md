@@ -25,6 +25,15 @@
 - Hover and focus state are bidirectional between overlay boxes and
   panel rows; activating a row jumps the document to the right page and
   scrolls both the row and the box into view.
+- Cross-surface hit targets are wired via `data-field-box-id` and
+  `data-field-row-id`, not refs or class scans.
+- Cross-surface scrolling re-attempts across multiple
+  `requestAnimationFrame` ticks (~3) to survive the layout commit gap
+  after `activePage` changes; pending scrolls are replayed on the next
+  layout effect.
+- Bounding-box buttons activate via `onClickCapture` (or call
+  `setHighlightsOn(true)` before any `stopPropagation`) so the off→on
+  highlight transition runs before any ancestor bubble-phase handler.
 - When the parser yields zero highlights, the UI shows an explicit
   empty-state message (banner, not a small text strip) instead of a
   blank overlay.
@@ -34,16 +43,41 @@
   before `files/{id}:download` so workspace-scoped files don't 404.
 - The `<canvas>` mounts on `PDFDocumentProxy` ready, not on layout —
   layout is derived from the first `page.render()`.
+- Canvas renders at `devicePixelRatio` (capped ~3 for the active page,
+  ~2 for thumbnails) using PDF.js's `transform` argument so high-DPI
+  displays don't produce a blurry page.
+- Render tasks are tracked in a ref and `cancel()`-ed on prop change /
+  cleanup; otherwise a re-render throws "Cannot use the same canvas
+  during multiple render() operations" and the page half-paints.
+- The per-page renderer is keyed by `activePage` so layout/render refs
+  reset cleanly when the operator switches pages.
 - The dialog uses `key={runId}` (or equivalent) and aborts in-flight
   payload requests via `AbortController` when closing or switching runs.
 - The initial page is `min(field.pageNumber)` from the parsed
   highlights, not an unconditional `1`.
+- Multi-page documents render a left-side page rail with one
+  lazily-rendered thumbnail per page, an active-page ring, and a
+  field-count badge per page; single-page documents skip the rail.
+- Mask cutout `<rect>` elements set `shapeRendering="crispEdges"` so
+  the dim-layer "spotlight" cutouts have sharp perimeters instead of
+  fuzzy anti-aliased edges.
 - Bounding-box buttons re-enable highlights when off; clicking a panel
   row or its confidence meter does the same.
 - SVG mask ids are namespaced via `useId()` and sanitized.
 - The right-panel value chip recursively unwraps nested dictionaries,
   lists, and decimal-bit numbers; it never falls back to
   `JSON.stringify`.
+- The right-panel value chip caps multi-line height (`max-h-[120px]`)
+  and constrains single-line values to horizontal overflow so a large
+  formatted dictionary never balloons the row past the viewport.
+- The right-panel toolbar row is icon-only (page filter, search toggle,
+  sort cycle) with mandatory tooltips; only the page filter
+  side-effects `activePage`, and search/sort state survives a
+  same-dialog `runId` change.
+- The confidence indicator is a three-bar signal meter, not a
+  percentage badge — bucketed `<55` / `<85` / `≥85` with bucket-encoded
+  color and an aria-label tooltip that adapts to fractional vs.
+  percentage inputs.
 - For non-normalized bounding boxes, the Y-axis flip decision is made
   per page via overlap scoring against the page rectangle.
 - For chat-surfaced attachments: PDFs with a `runId` route to the rich
@@ -53,3 +87,24 @@
 - The dialog title shows the document filename across all entry points
   (dashboard table, chat attachment, expert queue), not a generic
   "Document Processing" label.
+- `pdfjs-dist` is loaded via dynamic `import("pdfjs-dist")` (or a
+  framework `ssr: false` boundary) so server-rendered surfaces don't
+  crash with `ReferenceError: window is not defined`.
+- Toolbar tooltips render under a single Radix-style `<TooltipProvider>`
+  in the dialog tree (or inherit one from the app shell), not one
+  provider per tooltip.
+- The viewer treats the Window Chrome palette and the pixel sizes
+  (~31×31 toolbar buttons, ~96px thumbnails, ~120px page rail, ~320px
+  panel, 90vw × 90vh dialog) as **reference defaults** — apps may map
+  to their own design tokens and densities, but preserve the contrast
+  hierarchy and the relative width relationships called out in each
+  section.
+- Every viewer state from "State Coverage" has an explicit UI
+  transition: `idle`, `pdf-loading`, `pdf-error`, `payload-loading`,
+  `payload-error`, `payload-empty`, `ready`, `rendering-page`,
+  `render-cancelled`, `highlights-off`, `panel-collapsed`, `closing`.
+  Silent fall-through on any of these is the failure mode behind
+  "the viewer hangs" reports.
+- The two server routes (file-stream proxy and run-payload JSON)
+  authenticate to Kognitos using server credentials only; no Kognitos
+  token reaches the browser.
