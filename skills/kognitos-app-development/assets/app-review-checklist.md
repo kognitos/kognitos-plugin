@@ -34,10 +34,24 @@
   before `files/{id}:download` so workspace-scoped files don't 404.
 - The `<canvas>` mounts on `PDFDocumentProxy` ready, not on layout —
   layout is derived from the first `page.render()`.
+- Canvas renders at `devicePixelRatio` (capped ~3 for the active page,
+  ~2 for thumbnails) using PDF.js's `transform` argument so high-DPI
+  displays don't produce a blurry page.
+- Render tasks are tracked in a ref and `cancel()`-ed on prop change /
+  cleanup; otherwise a re-render throws "Cannot use the same canvas
+  during multiple render() operations" and the page half-paints.
+- The per-page renderer is keyed by `activePage` so layout/render refs
+  reset cleanly when the operator switches pages.
 - The dialog uses `key={runId}` (or equivalent) and aborts in-flight
   payload requests via `AbortController` when closing or switching runs.
 - The initial page is `min(field.pageNumber)` from the parsed
   highlights, not an unconditional `1`.
+- Multi-page documents render a left-side page rail with one
+  lazily-rendered thumbnail per page, an active-page ring, and a
+  field-count badge per page; single-page documents skip the rail.
+- Mask cutout `<rect>` elements set `shapeRendering="crispEdges"` so
+  the dim-layer "spotlight" cutouts have sharp perimeters instead of
+  fuzzy anti-aliased edges.
 - Bounding-box buttons re-enable highlights when off; clicking a panel
   row or its confidence meter does the same.
 - SVG mask ids are namespaced via `useId()` and sanitized.

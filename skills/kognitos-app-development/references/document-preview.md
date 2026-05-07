@@ -116,6 +116,114 @@ Other rules:
   number), falling back to a generic "Document Processing" label. The
   toolbar lives in the workspace footer (see below).
 
+## Page Rail (Multi-page Documents)
+
+For PDFs with more than one page, render a vertical thumbnail rail on
+the left of the workspace. Single-page documents skip the rail and
+expand the workspace to fill the freed width.
+
+Required behavior:
+
+- One thumbnail per page, rendered through PDF.js at a small fit-width
+  (~96px CSS) using the same DPR-aware render pipeline as the main
+  canvas, but with a lower DPR cap (~2). Render thumbnails lazily as
+  they scroll into view; do not render all pages at mount.
+- Active page has a 2px accent ring and a slightly lighter background.
+  Inactive pages get a thin neutral outline that brightens on hover.
+- Page number caption sits below each thumbnail (small, mono font).
+- Click sets `activePage`. The main canvas re-mounts via
+  `key={activePage}` (see "Reset Across Runs") and the right-panel
+  field list filters to fields on that page.
+- Field count badge per thumbnail when highlights exist on that page.
+  This makes "the boxes are on page 3" visible at a glance.
+- Rail scrolls independently of the main workspace; do not couple
+  scrolls. Use `IntersectionObserver` to mark thumbnails visible for
+  the lazy renderer.
+- Rail width stays fixed (~120px CSS including padding) so resizing the
+  dialog doesn't reflow the document.
+- Aria: each thumbnail is a `<button>` with
+  `aria-current={page === activePage ? "page" : undefined}` and
+  `aria-label={\`Page ${page} of ${totalPages}${count ? \`, ${count} fields\` : ""}\`}`.
+
+Reference template:
+
+```tsx
+function PageRail({ pdf, pages, activePage, setActivePage, fieldsByPage }) {
+  if (pages <= 1) return null;
+  return (
+    <nav
+      aria-label="Document pages"
+      className="flex h-full w-[120px] shrink-0 flex-col gap-2 overflow-y-auto border-r border-white/[0.06] bg-zinc-950/40 p-2"
+    >
+      {Array.from({ length: pages }, (_, i) => i + 1).map((p) => {
+        const count = fieldsByPage[p]?.length ?? 0;
+        const active = p === activePage;
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setActivePage(p)}
+            aria-current={active ? "page" : undefined}
+            aria-label={`Page ${p} of ${pages}${count ? `, ${count} fields` : ""}`}
+            className={[
+              "group relative flex flex-col items-center gap-1 rounded-md p-1.5",
+              active
+                ? "bg-white/[0.06] ring-2 ring-sky-400"
+                : "ring-1 ring-white/[0.05] hover:ring-white/[0.15]",
+            ].join(" ")}
+          >
+            <PageThumbnail pdf={pdf} pageNumber={p} maxCssWidth={96} />
+            <span className="font-mono text-[10px] text-zinc-400">{p}</span>
+            {count > 0 ? (
+              <span className="absolute right-1 top-1 rounded bg-sky-500/80 px-1 text-[10px] font-medium text-zinc-950">
+                {count}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+```
+
+Reference template for the lazy thumbnail renderer:
+
+```tsx
+function PageThumbnail({ pdf, pageNumber, maxCssWidth }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const node = ref.current?.parentElement;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => entry.isIntersecting && setVisible(true),
+      { rootMargin: "200px 0px" },
+    );
+    io.observe(node);
+    return () => io.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void (async () => {
+      const page = await pdf.getPage(pageNumber);
+      if (cancelled || !ref.current) return;
+      // DPR cap of 2 for thumbnails — see Canvas Mount Order.
+      /* render into ref.current with DPR-aware scaling */
+    })();
+    return () => { cancelled = true; };
+  }, [pdf, pageNumber, visible]);
+
+  return <canvas ref={ref} />;
+}
+```
+
 ## Render Lifecycle and Reset
 
 The viewer has four startup-ordering hazards. Each silently produces
@@ -133,6 +241,11 @@ The viewer has four startup-ordering hazards. Each silently produces
   so the operator sees activity instead of an empty workspace.
 - Prefer `useLayoutEffect` (not `useEffect`) for the active-page render so
   the canvas paints before the first visible frame when possible.
+- Render at device-pixel-ratio for sharpness on Retina / high-DPI
+  displays. PDF.js renders at scale 1 by default; without the DPR
+  transform the canvas will be visibly blurry. Cap DPR at ~3 for the
+  active page (and ~2 for thumbnails) so 4K iPad displays don't burn
+  frames rendering at 4×.
 
 Reference template for the page component:
 
@@ -162,7 +275,38 @@ function PdfPageWithHighlights({ pdf, pageNumber1, maxCssWidth, ... }) {
   // the first visible frame whenever possible.
   useLayoutEffect(() => {
     if (!layout) return;
-    /* page.render(...) into canvasRef.current using layout numbers */
+    let cancelled = false;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    void (async () => {
+      const page = await pdf.getPage(pageNumber1);
+      if (cancelled) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const scale = layout.cssW / layout.baseW;
+      const vp = page.getViewport({ scale });
+
+      // DPR-aware sizing: backing-store at cssW × dpr, displayed at cssW.
+      // Cap DPR at 3 so 4K displays don't burn frames; thumbnail rail
+      // uses 2 (see Page Rail section).
+      const dpr = typeof window !== "undefined"
+        ? Math.min(Math.max(window.devicePixelRatio || 1, 1), 3)
+        : 1;
+      canvas.width  = Math.max(1, Math.floor(layout.cssW * dpr));
+      canvas.height = Math.max(1, Math.floor(layout.cssH * dpr));
+      canvas.style.width  = `${layout.cssW}px`;
+      canvas.style.height = `${layout.cssH}px`;
+
+      const task = page.render({
+        canvasContext: ctx,
+        viewport: vp,
+        // PDF.js renders into the backing-store coordinate space; the DPR
+        // transform scales its drawing to fill the higher-resolution canvas.
+        transform: dpr !== 1 ? ([dpr, 0, 0, dpr, 0, 0] as const) : undefined,
+      });
+      try { await task.promise; } catch { /* cancelled render */ }
+    })();
+    return () => { cancelled = true; };
   }, [pdf, pageNumber1, layout]);
 
   return (
@@ -173,6 +317,76 @@ function PdfPageWithHighlights({ pdf, pageNumber1, maxCssWidth, ... }) {
     </div>
   );
 }
+```
+
+> **Required behavior — patterns differ but the contract is fixed.** Any
+> rendering implementation must (a) mount the canvas before layout is
+> known, (b) render at DPR with a capped transform, and (c) cancel
+> in-flight renders on prop change (see next section).
+
+### Render-task Cancellation
+
+`page.render()` returns a `RenderTask` that owns the canvas's 2D context
+until its promise resolves. If a second `render()` is started against
+the same canvas (zoom change, page change, or React re-render) before
+the previous task is cancelled, PDF.js throws
+`Cannot use the same canvas during multiple render() operations`. This
+surfaces as a half-painted page that never recovers.
+
+Rules:
+
+- Hold the active `RenderTask` in a ref (one per canvas).
+- On every effect entry: if a previous task is still running, call
+  `cancel()` on it and `await` its rejection (caught silently) before
+  starting a new one.
+- On effect cleanup: `cancel()` the task. Do not rely on cleanup-on-prop
+  change to also abort the underlying byte stream — call `cancel()`
+  explicitly.
+- Cancellation surfaces as a `RenderingCancelledException`. Treat it as
+  expected control flow, not an error.
+
+Reference template (drop into the `useLayoutEffect` from "Canvas Mount
+Order"):
+
+```tsx
+const renderTaskRef = useRef<{ cancel: () => void; promise: Promise<void> } | null>(null);
+
+useLayoutEffect(() => {
+  if (!layout) return;
+  let cancelled = false;
+  const canvas = canvasRef.current;
+  if (!canvas) return;
+
+  void (async () => {
+    // Tear down a previous render before starting a new one. If we don't,
+    // PDF.js throws "Cannot use the same canvas during multiple render()".
+    const prev = renderTaskRef.current;
+    if (prev) {
+      prev.cancel();
+      try { await prev.promise; } catch { /* expected RenderingCancelledException */ }
+      renderTaskRef.current = null;
+    }
+    if (cancelled) return;
+
+    const page = await pdf.getPage(pageNumber1);
+    if (cancelled) return;
+    /* ...sizing as in Canvas Mount Order template... */
+
+    const task = page.render({ canvasContext: ctx, viewport: vp, transform });
+    renderTaskRef.current = task;
+    try { await task.promise; } catch { /* cancelled */ }
+    if (renderTaskRef.current === task) renderTaskRef.current = null;
+  })();
+
+  return () => {
+    cancelled = true;
+    const t = renderTaskRef.current;
+    if (t) {
+      t.cancel();
+      renderTaskRef.current = null;
+    }
+  };
+}, [pdf, pageNumber1, layout]);
 ```
 
 ### Initial Page Sync
@@ -199,6 +413,11 @@ useEffect(() => {
   refs reset when the operator switches to a different run. The viewer's
   own `runId`-keyed effects are belt-and-suspenders; the `key` is the
   belt.
+- Mount the per-page renderer with `key={activePage}` so layout/render
+  refs (canvas size, `RenderTask`, `pageBase`) reset cleanly when the
+  page changes. Otherwise a stale `pageBase` from the previous page
+  briefly drives layout for the new page and the dim mask scopes to
+  the wrong rectangle for one frame.
 - Reset `highlightsOn` to `true` when the dialog closes, unless preference
   persistence is intentionally implemented.
 
@@ -210,6 +429,15 @@ useEffect(() => {
     runId={runId}
   />
 ) : null}
+
+// Inside the viewer, the per-page renderer:
+<PdfPageWithHighlights
+  key={activePage}
+  pdf={pdf}
+  pageNumber1={activePage}
+  maxCssWidth={maxCssWidth}
+  highlights={highlightsOnActivePage}
+/>
 ```
 
 ### Aborting In-flight Requests
@@ -361,6 +589,9 @@ not branch on units.
   legal SVG id (strip `:`). Two open dialogs — or hydration of a single
   dialog — produce duplicate ids that break `mask="url(#…)"` references
   and the dim layer goes fully opaque or fully transparent.
+- Mask cutout rectangles MUST set `shapeRendering="crispEdges"`.
+  Without it, sub-pixel anti-aliasing softens the rectangle edges and
+  the dim layer's "spotlight" cutouts look fuzzy at the perimeter.
 - If boxes still vanish under the dim plane while inspecting layers in
   DevTools, force the overlay wrapper into its own GPU layer
   (`transform-gpu` or `transform: translateZ(0)`) to win the stacking
