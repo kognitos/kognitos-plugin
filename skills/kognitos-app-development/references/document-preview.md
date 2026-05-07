@@ -574,6 +574,40 @@ Coordinate mode is per-field, inferred from the decoded bbox magnitudes
 percentage layout against the PDF base viewport, so the overlay code does
 not branch on units.
 
+### Hit-Target Wiring
+
+Cross-surface activation (click a panel row → scroll the box; click a
+box → scroll the row) needs a stable handle on the DOM nodes for both
+sides. Use `data-*` attributes — not refs, not CSS class scans — so the
+wiring survives re-renders and key changes:
+
+- Each bounding-box `<button>` gets `data-field-box-id={field.id}` and
+  is keyed by `field.id`.
+- Each right-panel row container gets `data-field-row-id={field.id}`.
+- The cross-surface scroll function is a single helper that does
+  `document.querySelector(\`[data-field-box-id="${id}"]\`)` (or the
+  matching row attribute), so callers don't reimplement DOM lookup.
+- These attributes are part of the public hit-target contract — do not
+  rename them in component refactors without updating the helper.
+
+```tsx
+// Bounding-box button
+<button
+  type="button"
+  data-field-box-id={field.id}
+  aria-label={`Field ${field.displayName}`}
+  /* ...positioning, classes, transparent bg... */
+/>
+
+// Right-panel row
+<li data-field-row-id={field.id} /* ...row classes... */>
+  {/* ...row content... */}
+</li>
+```
+
+See "Bidirectional Scroll Synchronization" below for the helper that
+consumes these attributes.
+
 ### Stacking, Isolation, and Mask Scope
 
 - Wrap canvas + mask + overlay layers in a `position: relative` container
@@ -665,6 +699,87 @@ function PdfPageOverlay({ layout, highlights }) {
 - A click on a bounding-box button must re-enable highlights when they
   are off — see "Highlight Visibility Coordination" in the Right Panel
   section.
+
+### Bidirectional Scroll Synchronization
+
+Activating a field on either surface scrolls the *other* surface to
+match. The viewer has two independent scroll containers — the document
+workspace (often a `ScrollArea`) and the panel list — so a single
+`scrollIntoView` won't fix both.
+
+Failure mode without this discipline: clicking a panel row jumps the
+page but the box ends up off-screen; clicking a box on the page never
+brings the row into view.
+
+Rules:
+
+- One helper per direction (`scrollBoxIntoView(id)`,
+  `scrollRowIntoView(id)`). Both look up nodes via the `data-*`
+  attributes from "Hit-Target Wiring".
+- The first frame after activation may not have committed layout for
+  the new active page yet. Re-attempt across **multiple
+  `requestAnimationFrame` ticks** (3 is the practical sweet spot)
+  before giving up. A `pendingScrollRef` lets the helper re-fire on
+  the next layout commit if the node is still missing.
+- Use `scrollIntoView({ behavior: "auto", block: "nearest" })` for
+  programmatic scrolls — `smooth` interferes with the multi-rAF retry
+  and feels laggy on cross-surface activation.
+- After scrolling the box, also nudge the panel row (and vice-versa)
+  in the same handler. Do not depend on user follow-up gestures.
+- Cancel a pending scroll on `runId` change, dialog close, or
+  `activePage` change so a stale id doesn't run after the user moves
+  on.
+
+Reference helper:
+
+```ts
+const pendingScrollRef = useRef<{ id: string; kind: "box" | "row" } | null>(null);
+
+function scrollFieldNodeIntoView(id: string, kind: "box" | "row") {
+  const sel = kind === "box"
+    ? `[data-field-box-id="${CSS.escape(id)}"]`
+    : `[data-field-row-id="${CSS.escape(id)}"]`;
+
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  const tick = () => {
+    const node = document.querySelector<HTMLElement>(sel);
+    if (node) {
+      node.scrollIntoView({ behavior: "auto", block: "nearest" });
+      pendingScrollRef.current = null;
+      return;
+    }
+    if (++attempts < maxAttempts) {
+      requestAnimationFrame(tick);
+    } else {
+      // Layout still not committed — leave a pending marker so the
+      // next render's layout effect can fire it.
+      pendingScrollRef.current = { id, kind };
+    }
+  };
+
+  requestAnimationFrame(tick);
+}
+
+// Activation handler does both surfaces in one pass:
+const onActivateField = useCallback((id: string) => {
+  if (!highlightsOnRef.current) setHighlightsOn(true);
+  setFocusedFieldId(id);
+  const h = parsedHighlightsRef.current.find((x) => x.id === id);
+  if (h) setActivePage(h.pageNumber);
+  scrollFieldNodeIntoView(id, "box");
+  scrollFieldNodeIntoView(id, "row");
+}, []);
+
+// Replay any pending scroll on layout commit (e.g. after activePage change).
+useLayoutEffect(() => {
+  const p = pendingScrollRef.current;
+  if (!p) return;
+  pendingScrollRef.current = null;
+  scrollFieldNodeIntoView(p.id, p.kind);
+}, [activePage, focusedFieldId]);
+```
 
 ## Right Panel — Extracted Values + Confidence
 
@@ -825,6 +940,25 @@ export function formatIdpValue(raw: unknown): string {
 - Do NOT short-circuit the focus action on the off→on transition; re-enable
   AND focus in the same handler so the user sees the box light up
   immediately.
+- For bounding-box buttons, wire activation through `onClickCapture`,
+  not `onClick`. The dim-overlay layer below the buttons may listen for
+  bubble-phase clicks (e.g. close-on-outside, deselect on background
+  click), and the off→on transition needs to fire **before** any
+  ancestor handler can `stopPropagation` or otherwise pre-empt the
+  re-enable. If the codebase uses `onClick` exclusively, an explicit
+  `event.stopPropagation()` after the `setHighlightsOn(true)` call is a
+  smaller alternative — but `onClickCapture` is the safer default
+  because it documents intent.
+
+```tsx
+// Bounding-box button — capture phase guarantees re-enable runs first.
+<button
+  type="button"
+  data-field-box-id={field.id}
+  onClickCapture={() => onActivateField(field.id)}
+  /* ...positioning, classes, transparent bg... */
+/>
+```
 
 ```ts
 const onActivateField = useCallback((id: string) => {
@@ -832,6 +966,8 @@ const onActivateField = useCallback((id: string) => {
   setFocusedFieldId(id);
   const h = parsedHighlightsRef.current.find((x) => x.id === id);
   if (h) setActivePage(h.pageNumber);
+  scrollFieldNodeIntoView(id, "box");
+  scrollFieldNodeIntoView(id, "row");
 }, []);
 ```
 
