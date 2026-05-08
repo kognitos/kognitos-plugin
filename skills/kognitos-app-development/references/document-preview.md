@@ -230,9 +230,16 @@ Other rules:
 
 ## Page Rail (Multi-page Documents)
 
-For PDFs with more than one page, render a vertical thumbnail rail on
-the left of the workspace. Single-page documents skip the rail and
-expand the workspace to fill the freed width.
+For PDFs with one or more pages, render a vertical thumbnail rail on
+the left of the workspace. The rail renders even for single-page
+documents — it surfaces a single thumbnail that doubles as a click
+target, and (more importantly) keeps the workspace columns from
+reflowing when a previously-multi-page run is replaced by a
+single-page one in the same dialog.
+
+If your design absolutely requires hiding the rail for single-page
+documents, do it via CSS (`hidden` when `pages === 1`) so the layout
+slot is preserved in the React tree.
 
 Required behavior:
 
@@ -261,7 +268,6 @@ Reference template:
 
 ```tsx
 function PageRail({ pdf, pages, activePage, setActivePage, fieldsByPage }) {
-  if (pages <= 1) return null;
   return (
     <nav
       aria-label="Document pages"
@@ -625,6 +631,15 @@ resize and dialog resize behave the same.
 
 A pill-shaped, floating toolbar pinned to the bottom of the workspace.
 
+**Mount the toolbar as a sibling of the scrolling workspace, not a
+descendant.** The center column should be a flex column whose children
+are (1) any optional banner, (2) the scrollable workspace, (3) the
+toolbar strip. Mounting the toolbar inside the scroll container lets
+it move with the document on scroll instead of staying pinned at the
+bottom — a regression that ships repeatedly and is hard to spot in PR
+review because it only manifests when the document is taller than the
+viewport.
+
 | Order | Control | Notes |
 |---|---|---|
 | 1 | Zoom out | Disabled at min zoom |
@@ -659,7 +674,9 @@ Rules:
   step that yields ~12% change per click so two clicks roughly double or
   halve the perceived size.
 - The toolbar re-centers itself on workspace resize via the same fit
-  measurement used for the document.
+  measurement used for the document. Because the toolbar is a sibling
+  of the scroll container (above), centering means `flex justify-center`
+  on the strip, not `position: absolute; left/right: 0`.
 
 > **Pixel sizes throughout this doc are reference defaults.** Numbers
 > like ~31×31 px (toolbar buttons), ~96px CSS (thumbnail width),
@@ -703,6 +720,17 @@ Coordinate mode is per-field, inferred from the decoded bbox magnitudes
 percentage layout against the PDF base viewport, so the overlay code does
 not branch on units.
 
+### Filter Coupling
+
+The bbox overlay layer and the right-panel field list are filtered
+independently:
+
+- The **bbox layer** filters strictly by `pageNumber === activePage`.
+- The **panel list** layers any user-controlled filters (page-filter
+  dropdown, search query, sort) on top of the full field list.
+
+Coupling the bbox layer to the panel filter (e.g. `pageNumber === activePage && (pageFilter === "all" || pageFilter === pageNumber)`) hides bboxes the user expects to see — the panel filter is for narrowing the *list*, not for hiding overlays on the page they're currently looking at.
+
 ### Hit-Target Wiring
 
 Cross-surface activation (click a panel row → scroll the box; click a
@@ -725,9 +753,20 @@ wiring survives re-renders and key changes:
   type="button"
   data-field-box-id={field.id}
   aria-label={`Field ${field.displayName}`}
+  onPointerEnter={() => onHighlightLinkPointerEnter(field.id)}
+  onPointerLeave={() => onHighlightLinkPointerLeave(field.id)}
+  onClickCapture={() => onHighlightLinkActivate(field.id)}
   /* ...positioning, classes, transparent bg... */
 />
+```
 
+The `onHighlightLinkPointerEnter` / `onHighlightLinkPointerLeave`
+handlers MUST be the same race-safe parent-side callbacks the
+right-panel rows use (functional `setLinkedHoverFieldId((cur) => cur === id ? null : cur)`). Wiring the bbox button's `onPointerLeave`
+directly to `setLinkedHoverFieldId(null)` races with row-side enter
+handlers — see "Field Row Layout" below for the same pattern.
+
+```tsx
 // Right-panel row
 <li data-field-row-id={field.id} /* ...row classes... */>
   {/* ...row content... */}
@@ -1280,76 +1319,29 @@ const onActivateField = useCallback((id: string) => {
 
 ## IDP Payload Contract
 
-Tool-agnostic spec — the parser must accept all of this:
+The IDP payload contract — paths, tree shape, element-type aliases,
+number decoding (including the C# `Decimal.GetBits` decoder), bbox
+coordinate mode inference, the per-page Y-axis flip selector, and
+the name blocklist — lives in the dedicated
+[`kognitos-idp-payload`](../../kognitos-idp-payload/SKILL.md) skill,
+along with a copy-pasteable reference adapter, a fixture matrix that
+covers every known payload-shape variant, and a diagnostics surface.
 
-- **Source path:** `payload.state.completed.outputs.idp_extraction_results`
-  (or `idpExtractionResults`).
-- **Tree shape:** root is a protobuf `Struct`, either
-  `{ dictionary: { entries: [...] } }` or a top-level `entries` array of
-  `{ key, value }` rows.
-- **Fields list:** under the root, find the entry whose key text is
-  `"fields"`. The value holds a list — resolve `value.list.items`,
-  falling back to `list.items`, then `items`.
-- **Field row:** each item is `{ dictionary: { entries } }` and contains
-  `element_type`, `name`, `values` (list of value objects), `page_number`,
-  `confidence`, and `bounding_box`. The bounding box is itself a nested
-  dictionary — decode it through the SAME typed-value/Struct unwrapper used
-  for field values. Do NOT assume `{x, y, width, height}` is a flat object;
-  each component may be a primitive, a protobuf `Value` wrapper, or a
-  `Decimal`-bit object.
-- **Element type alias:** accept both `extracted_field` (legacy) and
-  `document_field` (current `book-idp` shape), case-insensitive. Use a
-  single `isExtractedFieldElementType` helper — never inline the literal
-  comparison. New aliases must extend the helper, not the call sites.
-  Bumblebee's `normalizeDocumentField` is the upstream canonical mapping.
-- **Number decoding:** numbers may arrive as primitives, as protobuf
-  `Value` wrappers (`{ number: ... }`, nested `{ value: ... }` layers),
-  or as C# `Decimal`-style bits `{ lo, hi, mid?, flags? }`. Decode the
-  `Decimal` shape as `Decimal.GetBits` (96-bit unsigned magnitude
-  composed of `lo | mid << 32 | hi << 64`, scale in `flags` bits 16–23
-  capped at 28, sign in bit 31). Do **not** use `lo / 2^32` — that
-  decoder produced wrong bbox fractions on real payloads.
-- **Bbox coordinate mode:** if `max(x + width, y + height) ≤ 1.0005`,
-  treat the bbox as normalized 0–1 fractions; otherwise treat it as PDF
-  user-space points relative to the PDF.js base viewport at scale 1.
-  Both modes resolve into the same percentage layout downstream.
-- **Y-axis convention:** for non-normalized bboxes the Y-axis origin is
-  **not** universal: PDF user space is bottom-left origin (Y up), but
-  IDP can also emit boxes in viewport/image space (top-left origin,
-  Y down). Decide flip-vs-no-flip **per page** by scoring how much each
-  candidate placement of `fieldsOnPage` overlaps the page rectangle,
-  then picking the winning convention for that page. Do NOT assume a
-  single global convention — the same payload can mix conventions
-  across pages.
+The viewer described in this document consumes the adapter's flat
+`FieldHighlight[]` output. Rules of thumb:
 
-  Reference scorer:
+- Normalize the payload in an adapter, not in the UI. The viewer
+  consumes a flat `FieldHighlight[]`; it does not walk protobuf
+  wrappers.
+- One adapter per app, not per surface — document preview, exception
+  review, and fact-editing all read the same flat field list.
+- If your run produces zero highlights, the
+  `kognitos-idp-payload` skill's diagnostics reference is the
+  fastest way to identify which layer of the contract is failing.
 
-  ```ts
-  function chooseYAxisFlipForPage(
-    fieldsOnPage: Array<{ bbox: { x: number; y: number; width: number; height: number } }>,
-    pageRect: { width: number; height: number },
-  ): "flip" | "noflip" {
-    function overlap(flip: boolean): number {
-      let area = 0;
-      for (const f of fieldsOnPage) {
-        const y = flip ? pageRect.height - f.bbox.y - f.bbox.height : f.bbox.y;
-        const ix = Math.max(0, Math.min(pageRect.width, f.bbox.x + f.bbox.width)
-          - Math.max(0, f.bbox.x));
-        const iy = Math.max(0, Math.min(pageRect.height, y + f.bbox.height)
-          - Math.max(0, y));
-        area += ix * iy;
-      }
-      return area;
-    }
-    return overlap(true) > overlap(false) ? "flip" : "noflip";
-  }
-  ```
-
-- **Name blocklist:** skip rows whose name is in a small blocklist
-  (`payment_recommendation`, `result_type`, `document_count`, `document`,
-  `page_count`, `confidence`, empty), or contains `markdown_report`, or
-  matches `summary` / starts with `summary_`. These are aggregate keys,
-  not extracted fields, and they pollute the panel if rendered.
+See [`kognitos-idp-payload`](../../kognitos-idp-payload/SKILL.md) for
+the full contract, the reference adapter, the fixture matrix, and
+the diagnostics surface.
 
 ## Document Fetch and Payload Fetch
 
