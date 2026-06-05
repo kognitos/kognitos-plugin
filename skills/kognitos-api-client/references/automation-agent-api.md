@@ -158,7 +158,7 @@ Each event is a flat JSON object with an `id` plus exactly one payload field. Ke
 | `generation_complete` | A model generation finished |
 | `generation_failed` | The turn errored (`message`, `kind`, `retryable`) |
 
-Tool names you'll see Quill use internally (you don't call these — you only observe them): `artifact_list`, `artifact_read`, `artifact_write`, `search_apps`, `search_procedures`, `prepare_code_manifest` (validation), `create_run` / `get_run` (self-testing), `save_automation`, `request_connection`. Treat these as internal detail — never surface tool names, code, or connection IDs to a business user.
+As the agent works, you'll observe `tool_call_start` / `tool_call_argument` / `tool_result` events for the tools it runs internally — reading and writing its artifacts, searching for apps and procedures, validating, test-running, saving, and so on. You don't call these; you only observe them, and the exact set may change over time, so don't depend on specific tool names. The one kind you may need to act on is a **remote** tool call (`is_remote: true`) — most notably `request_connection` (see step 7) — which pauses the turn until you return a result. Treat tool calls as internal detail — never surface tool names, code, or connection IDs to a business user.
 
 ### 5. Detect when the turn is done
 
@@ -214,7 +214,7 @@ The agent records an `interrupt_answer` event and resumes. Sending a normal `mes
 
 #### Tool approvals (rare)
 
-A `tool_approval_requested` event pauses the turn until you approve or deny. This is **rare** — only entity-discovery activation requires approval, so most clients never see one. Reply on the same thread via `/input` with a `tool_approval_reply` (`tool_call_id` is the `id` from the `tool_call_start`; `reason` is used only on denial):
+Some tool calls require explicit approval before they run; when one does, the agent emits a `tool_approval_requested` event and pauses the turn until you approve or deny. (In practice this is uncommon, but treat it as part of the protocol rather than assuming it never happens.) Reply on the same thread via `/input` with a `tool_approval_reply` (`tool_call_id` is the `id` from the `tool_call_start`; `reason` is used only on denial):
 
 ```bash
 curl -sS -X POST \
@@ -272,8 +272,8 @@ Files inform the automation's design; they are example inputs, not data for the 
 
 Quill **runs and tests the automation itself** as part of the conversation. When you ask it to test (or after a build, when it wants to verify), it:
 
-1. Calls `create_run` with a draft run of the staged automation and the `inputs` for `main()` (e.g. an uploaded file). Test runs use `INVOCATION_SOURCE_TEST` and run with **exception handling disabled** — failures surface directly so Quill can diagnose them itself. There is no separate exception-resolution agent in this loop.
-2. Polls `get_run` until the run reaches a terminal state, **sleeping between polls** (you'll see `sleep_requested` events).
+1. Starts a draft test run of the staged automation with the `inputs` for `main()` (e.g. an uploaded file). Test runs use `INVOCATION_SOURCE_TEST` and run with **exception handling disabled** — failures surface directly so Quill can diagnose them itself. There is no separate exception-resolution agent in this loop.
+2. Polls the run until it reaches a terminal state, **sleeping between polls** (you'll see `sleep_requested` events).
 3. Reports the outcome to you in business language (e.g. a table of extracted fields).
 
 You don't orchestrate any of this — you just ask, observe the events, and read the agent's summary. To test, make sure Quill has values for every `main()` input (upload files and/or state values in your message); Quill will ask (via an interrupt) if something is missing.
@@ -328,7 +328,7 @@ Invoking `PUBLISHED` before the automation has ever been published returns `FAIL
 
 | Goal | Mechanism |
 |------|-----------|
-| Change / refine / debug / have Quill **test** the draft | Send a message on the Quill thread (`POST ${TBASE}/input`) — Quill drives `create_run` itself |
+| Change / refine / debug / have Quill **test** the draft | Send a message on the Quill thread (`POST ${TBASE}/input`) — Quill runs the test itself |
 | **Invoke the draft yourself** (test/preview) | `:invoke` with `AUTOMATION_STAGE_DRAFT` |
 | **Run in production** | **Publish first**, then `:invoke` with `AUTOMATION_STAGE_PUBLISHED` (or a schedule/trigger) |
 
@@ -352,7 +352,7 @@ Each run records `invocation_details.invocation_source`:
 
 | Value | Set when |
 |-------|----------|
-| `INVOCATION_SOURCE_TEST` | Quill triggered the run to test the **draft** (its `create_run`) |
+| `INVOCATION_SOURCE_TEST` | Quill triggered the run to test the **draft** |
 | `INVOCATION_SOURCE_MANUAL` | A user invoked via the `:invoke` API — including PAT-authenticated calls (the PAT resolves to a user; `user_id` is recorded) |
 | `INVOCATION_SOURCE_SCHEDULE` | A schedule fired the run (typically a published automation) |
 | `INVOCATION_SOURCE_TRIGGER` | An event/trigger fired the run |
