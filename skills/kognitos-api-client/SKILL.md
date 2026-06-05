@@ -30,16 +30,14 @@ Use this skill when you are wiring application code to Kognitos APIs or SDKs, or
 
 ## Key Concepts
 
-- **Automation code is authored by the AI agent**, not set directly via REST. To create an automation: create a shell, open an agent thread, and converse with the agent. See [references/automation-agent-api.md](references/automation-agent-api.md).
-- The agent conversation is non-deterministic — it may ask clarifying questions (interrupts), take multiple turns, or produce different code for the same prompt. Drive the conversation interactively rather than scripting it end-to-end.
-- **Base URL pattern**: `https://app.<region>-1[.<env>].kognitos.com` (e.g. `https://app.us-1.dev.kognitos.com` for dev).
-- **Auth**: Bearer token with a PAT (`kgn_pat_` prefix). The token identifies the user, not an org or workspace.
-
-## Key Concepts
-
-- **Automation code is authored by the AI agent**, not set directly via REST. To create an automation: create a shell, open an agent thread, and converse with the agent. See [references/automation-agent-api.md](references/automation-agent-api.md).
-- The agent conversation is non-deterministic — it may ask clarifying questions (interrupts), take multiple turns, or produce different code for the same prompt. Drive the conversation interactively rather than scripting it end-to-end.
-- **Base URL**: `KOGNITOS_BASE_URL` is `https://app.us-1.kognitos.com` for US customers. EU customers swap `us-1` for `eu-1`.
+- **Automations are built by the AI agent (Quill), not set via REST.** To create one: create an automation shell with `kind: AUTOMATION_KIND_QUILL2`, open a Quill thread on it, and converse with the agent. The agent id in URL paths is `quill2`. See [references/automation-agent-api.md](references/automation-agent-api.md).
+- **Quill builds, tests, and maintains the automation itself.** Within the conversation it discovers apps, writes and validates code, **tests the automation** (running it against your sample inputs and diagnosing failures itself), and **autosaves** at the end of a turn.
+- **Have Quill run/verify, not just build.** Give it realistic inputs so it runs the automation against the actual connected apps — this catches logical inconsistencies (wrong branch, mis-mapped field) and real integration mismatches that build-time validation can't. It's about confirming the automation does the right thing, not hardening against malformed input (trust Quill's judgment there). **Mind mutating automations** (`isMutation` procedures like sending email or creating records): each test is a real run with side effects, so keep those deliberate.
+- **It's a conversational, multi-turn API.** Send a message (`POST .../input`), observe **events** (`GET .../events` poll, or `GET .../stream` SSE) until the turn ends, then respond. The agent is non-deterministic and may ask clarifying questions (**interrupts**) or request connections. Drive the conversation interactively rather than scripting it end-to-end.
+- **Drafts vs published, and authoring vs running.** Automations are versioned `major.minor`: Quill's autosaves create **draft** minor versions (`major == 0` = never published) — **Quill never publishes**. Publishing (`:publish`) is an explicit step that bumps the major. Running uses `:invoke`, where `stage` selects the version: `AUTOMATION_STAGE_DRAFT` (test/preview) or `AUTOMATION_STAGE_PUBLISHED` (production, after publishing).
+- **Draft = Quill, published = Astral (exception handling).** Draft runs (Quill's `TEST` runs *and* user `MANUAL` draft invokes) disable exception handling — failures surface inline with a traceback and **no Astral**, so you can invoke a draft yourself and ask Quill to monitor and debug that run. Published runs are managed by Astral's guidance-center flow ([exceptions-api.md](references/exceptions-api.md)).
+- **What the user sees is the AOP** — a business-language Standard Operating Procedure (`english_code` on the automation, read-only). The SPy code is internal.
+- **Base URL pattern**: `https://app.<region>-1[.<env>].kognitos.com` (e.g. `https://app.us-1.kognitos.com`, or `https://app.us-1.dev.kognitos.com` for dev). EU customers swap `us-1` for `eu-1`.
 - **Auth**: Bearer token with a PAT (`kgn_pat_` prefix). The token identifies the user, not an org or workspace.
 
 ## Notes

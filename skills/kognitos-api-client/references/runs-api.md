@@ -42,7 +42,12 @@ The `state` field is a one-of:
 | `awaiting_guidance` | Paused — an exception was raised and the run is waiting for human input to resolve it. The run is **not failed**; it can resume after the exception is addressed. |
 | `stopped` | Paused by a user or control action |
 
-**Important:** `awaiting_guidance` and `failed` are distinct states. A run awaiting guidance is recoverable — resolve the exception (reply to the agent, provide missing input, fix the connection) and the run can continue. A failed run is terminal.
+**Important:** `awaiting_guidance` and `failed` are distinct states. A run awaiting guidance is recoverable — resolve it and the run can continue. A failed run is terminal.
+
+How `awaiting_guidance` is handled depends on the stage:
+
+- **Published runs** are managed by **Astral**: the `awaiting_guidance` state references a real `exception` resource; resolve it via the guidance-center flow ([exceptions-api.md](exceptions-api.md)) or the run-step verbs (`SkipRunStep` / `PatchRunStep` / `RetryRunStep`).
+- **Draft runs** (Quill's `TEST` runs and user `MANUAL` draft invokes) disable exception handling: `awaiting_guidance` has an **empty `exception`** and just a `description`/`location` — no Astral. Drive the fix through Quill on its thread (it reads the traceback and patches the code). See [automation-agent-api.md](automation-agent-api.md).
 
 ### Get run outputs
 

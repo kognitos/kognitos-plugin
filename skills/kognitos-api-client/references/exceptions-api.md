@@ -4,9 +4,11 @@ Use this reference when you need to inspect, triage, or resolve exceptions raise
 
 ## Overview
 
-An exception is an error that requires human attention. When a run enters `awaiting_guidance`, one or more exceptions have been raised. Exceptions have states (`PENDING`, `RESOLVED`, `ARCHIVED`) and belong to groups (`missing_values`, `user_system_error`, `internal_error`).
+This API covers exception handling for **published** automations, which is managed by **Astral** (the exception-resolution agent). It does **not** apply to draft runs: draft-stage runs — both Quill's own test runs and draft `:invoke` runs you trigger — disable exception handling, so a failure parks the run in `awaiting_guidance` with an empty `exception` and a plain `description`/`location` and **no Astral exception is created**. For those, drive the fix through Quill on its thread (it reads the run's traceback and patches the code). Use this API for the runtime exceptions raised by **published** automations. See [automation-agent-api.md](automation-agent-api.md) for the draft-vs-published distinction.
 
-Each exception has a resolution thread — a conversation between the exception resolution agent and human operators. You can reply to guide the agent toward resolution.
+An exception is an error that requires human attention. When a published run enters `awaiting_guidance`, Astral raises one or more exceptions. Exceptions have states (`PENDING`, `RESOLVED`, `ARCHIVED`) and belong to groups (`missing_values`, `user_system_error`, `internal_error`).
+
+Each exception has a resolution thread — a conversation between the exception resolution agent (Astral) and human operators. You can reply to guide the agent toward resolution. At the run level, resolution maps to the runs API verbs `SkipRunStep` / `PatchRunStep` / `RetryRunStep` (see [runs-api.md](runs-api.md)).
 
 ## Inspection Endpoints
 
