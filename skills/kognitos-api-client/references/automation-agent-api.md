@@ -148,7 +148,7 @@ Each event is a flat JSON object with an `id` plus exactly one payload field. Ke
 | `input_text` | Echo of a user message |
 | `reasoning_text` | The agent's extended thinking |
 | `output_text` | The agent's natural-language reply (streamed in deltas — concatenate by `id`) |
-| `tool_call_start` | The agent invoked a tool (`name`, `is_remote`, `id`) |
+| `tool_call_start` | The agent invoked a tool (`name`, `is_remote`, `id` — this `id` is the `tool_call_id` you pass when replying via `/tool-results` or `tool_approval_reply`) |
 | `tool_call_argument` | One streamed argument for the current tool call |
 | `tool_result` | Result of a tool call (`success`, `content`) |
 | `interrupt` | The agent needs an answer — **pauses the turn** (see step 6) |
@@ -166,7 +166,7 @@ The agent loops internally (think → call tools → read results → think agai
 
 If the latest event is `generation_failed`, the turn errored — read `message`/`kind`/`retryable`.
 
-A practical poll loop: fetch `/events`, look at the last event; stop when it's `generation_complete` (turn done), `interrupt` / `tool_approval_requested` (you must respond), or `generation_failed` (error).
+A practical poll loop: fetch `/events` and look at the latest event. Stop when it's `interrupt` or `tool_approval_requested` (you must respond), `generation_failed` (error), or `generation_complete` **with nothing pending** — i.e. no unanswered `interrupt`/`tool_approval_requested` and no unfulfilled remote `tool_call_start` (the turn is done, per the rule above). Because `generation_complete` also fires mid-turn, don't treat a bare `generation_complete` as done without that check.
 
 > **One active generation per thread.** A turn may span several internal generations (you'll see multiple `generation_complete` events as the agent thinks, calls tools, and continues). Do not send the next message until the agent is actually idle and waiting on you — posting to `/input` while a generation is still active returns `412 FAILED_PRECONDITION` (`generation already active for thread`). The exceptions are the inputs the agent is explicitly waiting for: an `interrupt_reply`, a `tool_approval_reply`, or a `/tool-results` for a pending remote tool call.
 
@@ -193,7 +193,7 @@ When the agent asks a question, it emits an `interrupt` event and pauses:
 }
 ```
 
-Reply on the **same thread** via `/input` with an `interrupt_reply`. `selected` carries the chosen option **label(s)** (an array — multiple only when `multi_select` is true), keyed by `question_id`:
+Reply on the **same thread** via `/input` with an `interrupt_reply`. `selected` carries the chosen option **label(s)** (an array — multiple only when `multi_select` is true), keyed by `question_id`. Pass the option's `label` **verbatim**, including any suffix like `(Recommended)` — it's the label string that's matched, not the question/option `id`:
 
 ```bash
 curl -sS -X POST \
@@ -212,6 +212,18 @@ curl -sS -X POST \
 
 The agent records an `interrupt_answer` event and resumes. Sending a normal `message` while an interrupt is pending records an empty answer and redirects the agent with your new message instead.
 
+#### Tool approvals (rare)
+
+A `tool_approval_requested` event pauses the turn until you approve or deny. This is **rare** — only entity-discovery activation requires approval, so most clients never see one. Reply on the same thread via `/input` with a `tool_approval_reply` (`tool_call_id` is the `id` from the `tool_call_start`; `reason` is used only on denial):
+
+```bash
+curl -sS -X POST \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"tool_approval_reply": {"tool_call_id": "<id from tool_call_start>", "approved": true}}' \
+  "${TBASE}/input"
+```
+
 ### 7. Remote tool calls (e.g. choosing a connection)
 
 Some tools are **remote** (`"is_remote": true` on `tool_call_start`) — most notably `request_connection`, which asks the user to pick or create a connection for an app the automation needs. The turn pauses until the result is provided. In the web UI this is fulfilled by a connection picker; the result is the chosen **connection id**.
@@ -226,13 +238,13 @@ curl -sS -X POST \
 # → { "book_connection_descriptor": { "connection_id": "<connection-id>", ... } }
 ```
 
-Then post the connection id back as the tool result, using the `tool_call_id` from the `tool_call_start` event:
+Then post the connection id back as the tool result. The `tool_call_id` is the `id` field from the `tool_call_start` event you're fulfilling:
 
 ```bash
 curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"tool_call_id": "<from tool_call_start>", "content": {"string_value": "<connection-id>"}, "success": true}' \
+  -d '{"tool_call_id": "<the id from tool_call_start>", "content": {"string_value": "<connection-id>"}, "success": true}' \
   "${TBASE}/tool-results"
 ```
 

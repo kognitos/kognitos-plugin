@@ -103,7 +103,7 @@ curl -sS -X POST \
 
 ### Step 4: Read the events until the turn ends
 
-Poll `GET .../events` (full ordered list each call) until the last event is `generation_complete` (turn done), `interrupt` / `tool_approval_requested` (you must respond), or `generation_failed` (error). Or subscribe to `GET .../stream` (SSE) for live events.
+Poll `GET .../events` (full ordered list each call) until the latest event is `interrupt` / `tool_approval_requested` (you must respond), `generation_failed` (error), or `generation_complete` **with nothing pending** (no unanswered interrupt/approval, no unfulfilled remote tool call). `generation_complete` fires multiple times mid-turn, so don't treat a bare one as done. Or subscribe to `GET .../stream` (SSE) for live events.
 
 ```bash
 curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}/events"

@@ -37,10 +37,12 @@ The `state` field is a one-of:
 |-------|---------|
 | `pending` | Queued, not yet started |
 | `executing` | Currently running |
+| `stopping` | Transitioning to `stopped` after a pause/stop request |
 | `completed` | Done — `outputs` map contains results |
 | `failed` | Terminated with an unrecoverable error |
 | `awaiting_guidance` | Paused — an exception was raised and the run is waiting for human input to resolve it. The run is **not failed**; it can resume after the exception is addressed. |
 | `stopped` | Paused by a user or control action |
+| `archived` | Archived by the user — preserved for history, cannot be modified or resumed |
 
 **Important:** `awaiting_guidance` and `failed` are distinct states. A run awaiting guidance is recoverable — resolve it and the run can continue. A failed run is terminal.
 
