@@ -315,6 +315,30 @@ curl -sS -X POST -H "Authorization: Bearer ${KOGNITOS_TOKEN}" -H "Content-Type: 
 
 > Quill **autosaves** at the end of a turn once work has settled and validated (a new draft minor version; earlier versions remain available). You don't issue a save call or grant permission — but Quill won't save a state that fails validation or a turn where nothing changed. Saving ≠ publishing.
 
+### Fixing or refining a *published* automation — fork a draft first
+
+**Quill only ever writes to the draft.** A freshly published automation can exist with **no draft working copy** (its current `version` is a published one — `minor == 0`, e.g. `7.0` — and there is no later draft). If you open a Quill thread on such an automation and ask it to change anything, Quill builds and tests the fix fine, but its autosave **fails**:
+
+```text
+gRPC error: 'Some requested entity was not found' —
+"Draft for automation with ID <auto_id> doesn't exist"
+```
+
+There is nothing for Quill to save into. Before driving Quill to fix a published automation, **initialize a draft from the published version** with `:fork`:
+
+```bash
+curl -sS -X POST \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  -H "Content-Type: application/json" -d '{}' \
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}:fork"
+```
+
+This creates a draft whose contents match the latest published version (it's exactly what opening the automation in the Quill editor UI does under the hood). After forking, send the fix request on the thread and Quill's autosave will succeed.
+
+**When to fork (detection rule):** before editing, check whether a draft already exists — query the automation at the **DRAFT** stage (`AUTOMATION_STAGE_DRAFT`). If the only version is published (`minor == 0`) with no later draft, fork first; then drive Quill.
+
+> **Caution — `:fork` resets the draft to match published.** It overwrites the draft working copy with the published version. Only fork when there is **no unsaved draft work** you care about; otherwise forking discards it. If a usable draft already exists, skip the fork and go straight to the thread.
+
 ## Running an automation — the `:invoke` API and stages
 
 `POST .../automations/{id}:invoke` runs an automation and returns `{run_id}`; poll the run with `GET .../{run_id}`. The `stage` field selects **which version** runs — it is **not** a "test mode" flag:
@@ -373,6 +397,8 @@ How a run *failure* is handled depends on the stage:
 ## Refining an automation
 
 Send follow-up messages on the same thread to iterate. Each accepted change is validated and (when it settles) autosaved as a new version.
+
+> Editing a **published** automation that has no draft? Quill's autosave will fail until a draft exists — **fork one first** with `:fork`. See [Fixing or refining a published automation](#fixing-or-refining-a-published-automation--fork-a-draft-first).
 
 ```bash
 curl -sS -X POST \
