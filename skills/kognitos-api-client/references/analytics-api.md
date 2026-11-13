@@ -15,10 +15,10 @@ Total and completed run counts per automation in a workspace:
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}:automationRunAggregates"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}:automationRunAggregates"
 ```
 
-Returns `automation_run_aggregates`, one entry per automation with `total_runs` and `completed_runs`.
+Returns `automation_run_aggregates`, one entry per automation with `total_runs` and `completed_runs`. If this returns `403` while `:dailyRunAggregates` works, your role lacks the permission for it; use the daily series filtered per automation instead.
 
 ### Run statistics (daily time series)
 
@@ -27,10 +27,10 @@ Daily run counts over an inclusive date range. Dates are passed as `google.type.
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}:dailyRunAggregates?start_date.year=2026&start_date.month=4&start_date.day=1&end_date.year=2026&end_date.month=4&end_date.day=11&time_zone=America/New_York"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}:dailyRunAggregates?start_date.year=2026&start_date.month=4&start_date.day=1&end_date.year=2026&end_date.month=4&end_date.day=11&time_zone=America/New_York"
 ```
 
-Returns `daily_run_aggregates`, one entry per day: `{"date": "2026-04-01", "stats": {"total_runs": 12}}`.
+Returns `daily_run_aggregates`, one entry per day: `{"date": "2026-04-01", "stats": {"total_runs": 12}}`. Entries are not in date order; sort by `date`.
 
 To scope to automations, add `filter` on `automation_id` (`=`, combined with `OR`), URL-encoded:
 
@@ -45,7 +45,7 @@ High-level metrics: cost/time savings, run counts, completion rates (auto-comple
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/dashboards:queryInsights?filter.time_window.start_time=2026-04-01T00:00:00Z&filter.time_window.end_time=2026-04-11T23:59:59Z&filter.time_window.time_zone=UTC"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/dashboards:queryInsights?filter.time_window.start_time=2026-04-01T00:00:00Z&filter.time_window.end_time=2026-04-11T23:59:59Z&filter.time_window.time_zone=UTC"
 ```
 
 Optional filters take bare ids and may repeat: `&filter.workspace_ids=${WS}` and `&filter.automation_ids=${AUTO_ID}`. Omit `filter.time_window` for all time.
@@ -61,7 +61,7 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"time_window": {"start_time": "2026-04-01T00:00:00Z", "end_time": "2026-04-11T23:59:59Z", "time_zone": "UTC"}}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:queryInsights"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:queryInsights"
 ```
 
 Returns `{"mttr_seconds": 5400}`; `0` when no exception was resolved in the window.

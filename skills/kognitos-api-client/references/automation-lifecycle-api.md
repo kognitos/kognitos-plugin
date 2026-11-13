@@ -43,7 +43,7 @@ curl -sS -X POST \
   "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}:restore"
 # → {"automation": {"version": "1.1", "latest_published_version": "1.0", ...}}
 
-# Discard the current draft
+# Discard the current draft (on a never-published automation this deletes the automation)
 curl -sS -X DELETE -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/drafts"
 ```
@@ -79,7 +79,9 @@ curl -sS -X POST \
 
 ## Export and import
 
-Export writes one revision to an encrypted ZIP that only Kognitos can read back. Import creates a new automation from it, in any workspace you can write to.
+Export writes one revision to an encrypted ZIP that only Kognitos can read back. Import creates a new automation from that ZIP, in any workspace you can write to.
+
+`revision_id` is required (without it, export returns `400`). Each export saves the ZIP as a new workspace file: the `{file_id}` in `zip_uri`'s path. Files can't be listed, so delete it with `DELETE .../files/{file_id}` ([files-api.md](files-api.md)) after downloading.
 
 ```bash
 # 1. Export
@@ -88,7 +90,7 @@ curl -sS -X POST \
   -H "Content-Type: application/json" \
   -d '{"revision_id": "1.0"}' \
   "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}:export"
-# → {"zip_uri": "https://...", "expire_time": "..."}   (link valid for about an hour)
+# → {"zip_uri": "https://.../files/{file_id}:download?...", "expire_time": "..."}   (link valid for about an hour)
 
 curl -sS -o automation.zip "${ZIP_URI}"
 

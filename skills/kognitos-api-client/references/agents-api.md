@@ -36,7 +36,7 @@ Notes:
 - Use the scope shown. The same agent id under a different scope returns `404` (for example `quill2` only exists under an automation).
 - Some built-in agents need a variable when you create the thread; without it the create call returns `400` (`missing required variable`). `hermes` needs `{"variables": {"workItemId": "<work item id>"}}`. `prime` needs `{"variables": {"target": "main"}}` for the whole automation, or `steps/{step_id}:{function}` for one step.
 - Not every built-in agent exposes every thread endpoint to API keys. `prime` threads can't be read, renamed or deleted (`403`), and `shifu` threads can't be read or renamed. Without get, follow the turn with `/events` instead of `status`.
-- Threads of built-in agents come back with an empty `agent_id`. Variable names follow the agent: most use camelCase (`automationId`, `runId`), `shifu` uses snake_case (`connection_id`, `book_name`).
+- Threads often come back with an empty `agent_id` (always for built-in agents, sometimes for workspace agents); identify the agent from the path you called. Variable names follow the agent: most use camelCase (`automationId`, `runId`), `shifu` uses snake_case (`connection_id`, `book_name`).
 - `hermes` wraps the text meant for the user in `<user-message>` tags inside `output_text`. Strip the tags before you show it.
 - `astral2` and `astral-lite` are built for runs that raised an exception. On a run that completed they reply that there is nothing to diagnose or report.
 - Exceptions on published runs have their own API with a resolution flow on top of these agents. Prefer [exceptions-api.md](exceptions-api.md) over driving `hermes` or `astral2` directly.
@@ -124,7 +124,7 @@ Every save creates an immutable, numbered version. A thread is pinned to the ver
 
 | Action | Method | Path | Notes |
 |--------|--------|------|-------|
-| List versions | GET | `/agents/{agent_id}/versions` | `{"versions": [{"version", "tags", "created_at", "created_by"}]}`, oldest first |
+| List versions | GET | `/agents/{agent_id}/versions` | `{"versions": [{"version", "created_at", "tags", "created_by"}]}`, oldest first. `tags` and `created_by` may be omitted |
 | Get a version | GET | `/agents/{agent_id}/versions/{version}` | Same shape as get agent |
 | Restore a version | POST | `/agents/{agent_id}/versions/{version}:restore` | Body `{}`. Copies that version to a **new** head version and returns it |
 | Tag a version | POST | `/agents/{agent_id}/versions/{version}:tag` | Body `{"tag": "production"}`. Returns `204` |

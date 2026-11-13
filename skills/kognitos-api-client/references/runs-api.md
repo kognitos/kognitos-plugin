@@ -13,7 +13,7 @@ A run is a single execution of an automation. Runs progress through states: `pen
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs?page_size=20"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs?page_size=20"
 ```
 
 Newest first; at most 10 per page unless `page_size` is set. Supports `filter` (AIP-160) on `create_time`, `runState` (`Pending`, `Executing`, `Stopped`, `WaitingForGuidance`, `Completed`, …), `stage` (`Draft`, `Published`), `invocation_source`, `stage_version`, `archived`, and free-text `search : "term"` over inputs, outputs and file contents:
@@ -33,10 +33,10 @@ Archived runs are left out unless the filter has `archived = true`.
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}"
 ```
 
-The `state` field is a one-of:
+The `state` field holds `update_time` plus exactly one of these keys:
 
 | State | Meaning |
 |-------|---------|
@@ -58,7 +58,7 @@ Other useful fields: `stage` (`AUTOMATION_STAGE_DRAFT` or `AUTOMATION_STAGE_PUBL
 How `awaiting_guidance` is handled depends on the stage:
 
 - **Published runs** are managed by **Astral**: the `awaiting_guidance` state references a real `exception` resource, which is resolved in the Workbench ([exceptions-api.md](exceptions-api.md)).
-- **Draft runs** (Quill's `TEST` runs and user `MANUAL` draft invokes) disable exception handling: `awaiting_guidance` has an **empty `exception`** and just a `description`/`location` — no Astral. Drive the fix through Quill on its thread (it reads the traceback and patches the code). See [automation-agent-api.md](automation-agent-api.md).
+- **Draft runs** (Quill's `TEST` runs and your own draft invokes, `MANUAL` or `PAT`) disable exception handling: `awaiting_guidance` has an **empty `exception`** and just a `description`/`location` — no Astral. Drive the fix through Quill on its thread (it reads the traceback and patches the code). See [automation-agent-api.md](automation-agent-api.md).
 
 ### Get run outputs
 
@@ -69,7 +69,7 @@ Outputs set so far by a run that has not completed (paused, stopped or awaiting 
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/executions/${EXECUTION_ID}/outputs"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/executions/${EXECUTION_ID}/outputs"
 ```
 
 This returns `outputs`, each entry a `{"value": ..., "type": ...}` pair.
@@ -89,7 +89,7 @@ The primary debugging view — shows each step the automation executed.
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}/events?page_size=100"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}/events?page_size=100"
 ```
 
 Returns `run_events`: `run_update` events (state changes) and `execution_journal` events (`started`, `node_started`, `node_executed`, `completed`, …), each with its `execution_id`. Paginate with `page_token` from the response.
@@ -105,7 +105,7 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"reason": "Investigating unexpected behavior"}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}:pause"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}:pause"
 ```
 
 ### Archive runs
@@ -117,7 +117,7 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"names": ["organizations/'"${ORG}"'/workspaces/'"${WS}"'/automations/'"${AUTO_ID}"'/runs/'"${RUN_ID}"'"]}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs:archive"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs:archive"
 ```
 
 ### Continue a paused run
@@ -129,7 +129,7 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}:continue"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}:continue"
 ```
 
 ## Polling Pattern
@@ -142,7 +142,7 @@ RUN_RESPONSE=$(curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"stage": "AUTOMATION_STAGE_DRAFT", "inputs": {}}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}:invoke")
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}:invoke")
 
 # run_id is the run's full resource name: organizations/.../automations/.../runs/{run}
 RUN_NAME=$(echo "$RUN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['run_id'])")
@@ -151,10 +151,10 @@ RUN_ID="${RUN_NAME##*/}"
 # Poll (in application code, use exponential backoff)
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/runs/${RUN_ID}"
 ```
 
-Because `run_id` is the full resource name, `${BASE_URL}/api/v1/${RUN_NAME}` is the same URL.
+Because `run_id` is the full resource name, `${KOGNITOS_BASE_URL}/api/v1/${RUN_NAME}` is the same URL.
 
 States that stop polling: `completed`, `failed`, `awaiting_guidance`, `awaiting_answer`, `stopped`.
 

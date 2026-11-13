@@ -13,6 +13,15 @@ Set these environment variables (or source `.env.local`):
 | `KOGNITOS_ORGANIZATION_ID` | For most calls | — | Organization ID |
 | `KOGNITOS_WORKSPACE_ID` | For most calls | — | Workspace ID |
 
+The references shorten the last two to `ORG` and `WS`:
+
+```bash
+ORG="${KOGNITOS_ORGANIZATION_ID}"
+WS="${KOGNITOS_WORKSPACE_ID}"
+```
+
+Other ids (`AUTO_ID`, `RUN_ID`, `FILE_ID`, ...) come from earlier responses.
+
 ## Base URL
 
 `KOGNITOS_BASE_URL` is the host you sign in to, for example `https://app.us-1.kognitos.com`. Use it directly in snippets as `${KOGNITOS_BASE_URL}`.

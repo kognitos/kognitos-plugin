@@ -21,9 +21,15 @@ Use this skill when you are wiring application code to Kognitos APIs or SDKs, or
 ## When To Load More
 
 - For the public SDK and OpenAPI sources: [references/public-assets.md](references/public-assets.md)
-- For `curl`-first exploration and reproductions: [references/curl-examples.md](references/curl-examples.md)
+- For `curl`-first exploration and reproductions, and the shell variables every example uses: [references/curl-examples.md](references/curl-examples.md)
 - For creating automations via the AI agent: [references/automation-agent-api.md](references/automation-agent-api.md)
 - For other agents, the Agent Builder, and the thread protocol all agents share: [references/agents-api.md](references/agents-api.md)
+- For invoking automations, polling runs, reading outputs and run events: [references/runs-api.md](references/runs-api.md)
+- For uploading, reading, downloading and deleting files: [references/files-api.md](references/files-api.md)
+- For exceptions (counts, groups, assignment, resolution): [references/exceptions-api.md](references/exceptions-api.md)
+- For schedules: [references/scheduling-api.md](references/scheduling-api.md)
+- For books (integrations), connections and procedures: [references/books-api.md](references/books-api.md)
+- For run and exception statistics: [references/analytics-api.md](references/analytics-api.md)
 - For interface design and ownership: [references/integration-shape.md](references/integration-shape.md)
 - For retries, status mapping, and operator signals: [references/error-handling.md](references/error-handling.md)
 - For assets, folders, and collections (workspace files and tables automations use): [references/content-api.md](references/content-api.md)
@@ -43,11 +49,11 @@ Use this skill when you are wiring application code to Kognitos APIs or SDKs, or
 - **Have Quill run/verify, not just build.** Give it realistic inputs so it runs the automation against the actual connected apps — this catches logical inconsistencies (wrong branch, mis-mapped field) and real integration mismatches that build-time validation can't. It's about confirming the automation does the right thing, not hardening against malformed input (trust Quill's judgment there). **Mind mutating automations** (`isMutation` procedures like sending email or creating records): each test is a real run with side effects, so keep those deliberate.
 - **It's a conversational, multi-turn API.** Send a message (`POST .../input`), observe **events** (`GET .../events` poll, or `GET .../stream` SSE) until the turn ends, then respond. The agent is non-deterministic and may ask clarifying questions (**interrupts**) or request connections. Drive the conversation interactively rather than scripting it end-to-end.
 - **Drafts vs published, and authoring vs running.** Automations are versioned `major.minor`: Quill's autosaves create **draft** minor versions (`major == 0` = never published) — **Quill never publishes**. Publishing (`:publish`) is an explicit step that bumps the major. Running uses `:invoke`, where `stage` selects the version: `AUTOMATION_STAGE_DRAFT` (test/preview) or `AUTOMATION_STAGE_PUBLISHED` (production, after publishing).
-- **Draft = Quill, published = Astral (exception handling).** Draft runs (Quill's `TEST` runs *and* user `MANUAL` draft invokes) disable exception handling — failures surface inline with a traceback and **no Astral**, so you can invoke a draft yourself and ask Quill to monitor and debug that run. On a published run, Astral raises an exception and files it to the Workbench as a work item, where it is resolved in the work item's chat or by a retry or stop decision ([exceptions-api.md](references/exceptions-api.md), [workbench-api.md](references/workbench-api.md)).
+- **Draft = Quill, published = Astral (exception handling).** Draft runs (Quill's `TEST` runs *and* your own draft invokes, `MANUAL` or `PAT`) disable exception handling — failures surface inline with a traceback and **no Astral**, so you can invoke a draft yourself and ask Quill to monitor and debug that run. On a published run, Astral raises an exception and files it to the Workbench as a work item, where it is resolved in the work item's chat or by a retry or stop decision ([exceptions-api.md](references/exceptions-api.md), [workbench-api.md](references/workbench-api.md)).
 - **Quill is one of several agents, and they all share one thread protocol.** Built-in agents hang off an automation, a run, a connection, or the workspace; workspace agents are built in the Agent Builder (create, configure by talking to the Agent Builder Assistant, version, tag, export/import). Every agent uses the same create-thread, `POST .../input`, poll `status.state`, read events loop. Deploying a workspace agent is a UI step. See [references/agents-api.md](references/agents-api.md).
 - **What the user sees is the AOP** — a business-language Standard Operating Procedure (`english_code` on the automation, read-only). The SPy code is internal.
 - **Base URL**: `KOGNITOS_BASE_URL` is the host you sign in to, without `/api/v1`: `https://app.us-1.kognitos.com` for most organizations. Organizations hosted in another region use that region's host.
-- **Auth**: Bearer token with a PAT (`kgn_pat_` prefix). The token identifies the user, not an org or workspace.
+- **Auth**: Bearer token with a PAT (`kgn_pat_` prefix). The key belongs to a user and works only in the organization it was created in ([environment-model.md](../kognitos-bootstrap/references/environment-model.md) covers key scope).
 
 ## Notes
 

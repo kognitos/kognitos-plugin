@@ -17,7 +17,7 @@ Astral then files the exception to the **Workbench** as a work unit on a work it
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions?page_size=20"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions?page_size=20"
 ```
 
 Supports `filter` by `state`, `automation`, `group`, `run`, `create_time` (AIP-160):
@@ -38,7 +38,7 @@ Supports `filter` by `state`, `automation`, `group`, `run`, `create_time` (AIP-1
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions/${EXCEPTION_ID}"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions/${EXCEPTION_ID}"
 ```
 
 Returns `name`, `run` (run resource name), `automation` (bare id), `title`, `description` (a readable summary), `message` (the raw traceback), `location`, `group`, `state`, `stage`, `assignee`, `execution_id`, and `typed_extra` diagnostics such as `book_name`, `procedure_id` and `stack_trace`.
@@ -51,17 +51,17 @@ Aggregate counts by dimension — useful for dashboards and triage. Each is a `G
 # Count by group
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:countByGroup?filter=state%20%3D%20PENDING"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:countByGroup?filter=state%20%3D%20PENDING"
 
 # Count by automation
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:countByAutomation"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:countByAutomation"
 
 # Count by assignee
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:countByAssignee"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:countByAssignee"
 ```
 
 Responses carry `group_counts` (each with a `group` object: `name`, `title`, `description`, `suggested_action`), `automation_counts` (`automation` resource name and `count`) or `assignee_counts` (`assignee` and `count`), plus `total_size` and `total_exception_count`.
@@ -77,7 +77,7 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"name": "organizations/'"${ORG}"'/workspaces/'"${WS}"'/exceptions/'"${EXCEPTION_ID}"'", "assignee": "users/'"${USER_ID}"'"}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:assign"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:assign"
 ```
 
 Bulk assign pending exceptions by filter (`group`, `automation`, `create_time`, `run`, `stage`):
@@ -87,7 +87,7 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"filter": "automation = \"'"${AUTO_ID}"'\" AND group = \"missing_values\"", "assignee": "users/'"${USER_ID}"'"}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:assign"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:assign"
 ```
 
 Pass exactly one of `name` or `filter`. Set `assignee` to `""` (empty string) to unassign. The response is `{"assigned_count": N}`. This is the exception's own assignee, not the owner of its Workbench work item.
@@ -101,7 +101,7 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"filter": "automation = \"'"${AUTO_ID}"'\""}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:archive"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:archive"
 ```
 
 Filter fields: `run`, `automation`, `create_time`, `group`. To abandon whole runs together with their pending exceptions, archive the runs instead (`runs:archive`, see [runs-api.md](runs-api.md)).
@@ -115,7 +115,7 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"filter": "automation = \"'"${AUTO_ID}"'\""}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:unarchive"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/exceptions:unarchive"
 ```
 
 ## Resolving an exception
@@ -123,7 +123,7 @@ curl -sS -X POST \
 A published run's exception is resolved in the Workbench. Set a workspace prefix for the calls below:
 
 ```bash
-WS_API="${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}"
+WS_API="${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}"
 EXCEPTION_NAME="organizations/${ORG}/workspaces/${WS}/exceptions/${EXCEPTION_ID}"
 ```
 
@@ -188,7 +188,7 @@ Guide entries record how earlier exceptions of an automation were resolved.
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/guideEntries?page_size=20"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/guideEntries?page_size=20"
 ```
 
 Returns `guide_entries`, `next_page_token` and `total_size`.
@@ -198,7 +198,7 @@ Returns `guide_entries`, `next_page_token` and `total_size`.
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/guideEntries/${GUIDE_ENTRY_ID}"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/guideEntries/${GUIDE_ENTRY_ID}"
 ```
 
 A guide entry has `title`, `root_cause`, `resolution_steps`, `resolution_notes`, `source_exception`, `source_run` and a `state` (`STATE_PENDING_APPROVAL`, `STATE_APPROVED`, `STATE_REJECTED`, `STATE_ARCHIVED`).
