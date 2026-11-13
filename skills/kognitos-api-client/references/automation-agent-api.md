@@ -4,6 +4,8 @@ Use this reference when you need to create, refine, or test automations programm
 
 Quill is the Kognitos agent that **builds, tests, and maintains** automations. You drive it through a conversational thread: you send messages, it streams back events (its reasoning, tool calls, questions, and results), and it produces a validated automation. In URL paths the agent id is the literal string **`quill2`**.
 
+Quill speaks the same thread protocol as every other Kognitos agent. The generic parts (sending messages, reading events, knowing when a turn is done, interrupts, tool approvals, uploads, artifacts, and the other thread endpoints) are in [agents-api.md](agents-api.md). This page covers what is specific to Quill.
+
 ## Do not script this end-to-end
 
 This is a **conversational API**, not a pipeline. Treat each turn as `send → observe → decide → send`: send one message, read the event stream until the turn ends, then decide the next message based on what you saw. Do not wrap the whole flow in a single script that fires every call and parses only the end.
@@ -106,125 +108,21 @@ curl -sS -X POST \
   "${TBASE}/input"
 ```
 
-The message envelope supports more than text:
-
-```json
-{
-  "message": {
-    "content": "Test it with this invoice.",
-    "documents": [{ "uri": "uploads://Invoice.pdf", "filename": "Invoice.pdf" }],
-    "images":    [{ "uri": "uploads://screenshot.png" }]
-  }
-}
-```
-
-`uploads://` URIs come from the upload endpoint — see [Attaching files](#attaching-files).
+The message can also carry `documents` and `images` (see [Attaching files](#attaching-files)). The full input envelope is in [agents-api.md](agents-api.md).
 
 > The message shape is a single `message` object with a `content` string. This is **not** the legacy double-nested `user_message` / `user_message_type` structure.
 
-### 4. Observe the event stream
+### 4. Follow the turn
 
-A turn emits a stream of **events**. You have two ways to read them:
+Poll `GET ${TBASE}` until `status.state` leaves the working states, then read `GET ${TBASE}/events` (or hold `GET ${TBASE}/stream` open for live events). The states, the event types, and the rule for telling a finished turn from one that has not started yet are in [agents-api.md](agents-api.md). Quill turns are long: one turn usually contains several `generation_complete` events, and Quill often shows `THREAD_STATUS_STATE_SLEEPING` while it waits on a test run. Keep polling through both.
 
-**(a) Poll `GET .../events`** — returns the full ordered event list each call. Simplest and most robust for scripted/agent clients. Poll every few seconds until the **last** event is terminal (step 5).
+As the agent works, you'll observe `tool_call_start` / `tool_call_argument` / `tool_result` events for the tools it runs internally — reading and writing its artifacts, searching for apps and procedures, validating, test-running, saving, and so on. You don't call these; you only observe them, and the exact set may change over time, so don't depend on specific tool names. The one kind you may need to act on is a **remote** tool call (`is_remote: true`) — most notably `request_connection` (see step 6) — which pauses the turn until you return a result. Treat tool calls as internal detail — never surface tool names, code, or connection IDs to a business user.
 
-```bash
-curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}/events"
-# → {"events": [ {event}, {event}, ... ]}
-```
+### 5. Answer questions and approvals
 
-**(b) Subscribe to `GET .../stream` (SSE)** — a live `text/event-stream` of events as they happen. Best for real-time UIs. Each SSE message has an `id:` line and a `data:` line with one JSON event. Resume after a dropped connection with the `Last-Event-ID` header. A real client must **hold the connection open** for the whole turn; a short-lived process will miss events (poll `/events` instead).
+When Quill asks something (for example which email app to use), the thread shows `THREAD_STATUS_STATE_AWAITING_ANSWER` and the events end with an `interrupt`. Reply on the same thread with an `interrupt_reply`, passing option labels verbatim. Tool approvals are rare but follow the same pattern with a `tool_approval_reply`. Both shapes are in [agents-api.md](agents-api.md).
 
-```bash
-curl -sS -N -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  -H "Accept: text/event-stream" \
-  "${TBASE}/stream"
-```
-
-Each event is a flat JSON object with an `id` plus exactly one payload field. Key payload types:
-
-| Field | Meaning |
-|-------|---------|
-| `input_text` | Echo of a user message |
-| `reasoning_text` | The agent's extended thinking |
-| `output_text` | The agent's natural-language reply (streamed in deltas — concatenate by `id`) |
-| `tool_call_start` | The agent invoked a tool (`name`, `is_remote`, `id` — this `id` is the `tool_call_id` you pass when replying via `/tool-results` or `tool_approval_reply`) |
-| `tool_call_argument` | One streamed argument for the current tool call |
-| `tool_result` | Result of a tool call (`success`, `content`) |
-| `interrupt` | The agent needs an answer — **pauses the turn** (see step 6) |
-| `interrupt_answer` | Your recorded answer to an interrupt |
-| `tool_approval_requested` | The agent needs approval to run a tool — pauses the turn |
-| `sleep_requested` | The agent is sleeping (e.g. between run polls) — informational |
-| `generation_complete` | A model generation finished |
-| `generation_failed` | The turn errored (`message`, `kind`, `retryable`) |
-
-As the agent works, you'll observe `tool_call_start` / `tool_call_argument` / `tool_result` events for the tools it runs internally — reading and writing its artifacts, searching for apps and procedures, validating, test-running, saving, and so on. You don't call these; you only observe them, and the exact set may change over time, so don't depend on specific tool names. The one kind you may need to act on is a **remote** tool call (`is_remote: true`) — most notably `request_connection` (see step 7) — which pauses the turn until you return a result. Treat tool calls as internal detail — never surface tool names, code, or connection IDs to a business user.
-
-### 5. Detect when the turn is done
-
-The agent loops internally (think → call tools → read results → think again), so you will see **multiple `generation_complete` events within a single turn**. The turn is finished when the **latest** event is `generation_complete` **and** there is no pending `interrupt`, `tool_approval_requested`, or unfulfilled remote `tool_call_start`.
-
-If the latest event is `generation_failed`, the turn errored — read `message`/`kind`/`retryable`.
-
-A practical poll loop: fetch `/events` and look at the latest event. Stop when it's `interrupt` or `tool_approval_requested` (you must respond), `generation_failed` (error), or `generation_complete` **with nothing pending** — i.e. no unanswered `interrupt`/`tool_approval_requested` and no unfulfilled remote `tool_call_start` (the turn is done, per the rule above). Because `generation_complete` also fires mid-turn, don't treat a bare `generation_complete` as done without that check.
-
-> **One active generation per thread.** A turn may span several internal generations (you'll see multiple `generation_complete` events as the agent thinks, calls tools, and continues). Do not send the next message until the agent is actually idle and waiting on you — posting to `/input` while a generation is still active returns `412 FAILED_PRECONDITION` (`generation already active for thread`). The exceptions are the inputs the agent is explicitly waiting for: an `interrupt_reply`, a `tool_approval_reply`, or a `/tool-results` for a pending remote tool call.
-
-### 6. Respond to interrupts
-
-When the agent asks a question, it emits an `interrupt` event and pauses:
-
-```json
-{
-  "id": "377",
-  "interrupt": {
-    "interrupt_id": "toolu_...",
-    "questions": [{
-      "id": "email_app",
-      "question": "Which email app would you like to use?",
-      "header": "Email App",
-      "options": [
-        { "label": "Gmail (Recommended)", "description": "Send via a connected Google account" },
-        { "label": "Outlook",             "description": "Send via Microsoft / Office 365" }
-      ],
-      "multi_select": false
-    }]
-  }
-}
-```
-
-Reply on the **same thread** via `/input` with an `interrupt_reply`. `selected` carries the chosen option **label(s)** (an array — multiple only when `multi_select` is true), keyed by `question_id`. Pass the option's `label` **verbatim**, including any suffix like `(Recommended)` — it's the label string that's matched, not the question/option `id`:
-
-```bash
-curl -sS -X POST \
-  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "interrupt_reply": {
-      "interrupt_id": "toolu_...",
-      "answers": [
-        { "question_id": "email_app", "selected": ["Gmail (Recommended)"] }
-      ]
-    }
-  }' \
-  "${TBASE}/input"
-```
-
-The agent records an `interrupt_answer` event and resumes. Sending a normal `message` while an interrupt is pending records an empty answer and redirects the agent with your new message instead.
-
-#### Tool approvals (rare)
-
-Some tool calls require explicit approval before they run; when one does, the agent emits a `tool_approval_requested` event and pauses the turn until you approve or deny. (In practice this is uncommon, but treat it as part of the protocol rather than assuming it never happens.) Reply on the same thread via `/input` with a `tool_approval_reply` (`tool_call_id` is the `id` from the `tool_call_start`; `reason` is used only on denial):
-
-```bash
-curl -sS -X POST \
-  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"tool_approval_reply": {"tool_call_id": "<id from tool_call_start>", "approved": true}}' \
-  "${TBASE}/input"
-```
-
-### 7. Remote tool calls (e.g. choosing a connection)
+### 6. Remote tool calls (e.g. choosing a connection)
 
 Some tools are **remote** (`"is_remote": true` on `tool_call_start`) — most notably `request_connection`, which asks the user to pick or create a connection for an app the automation needs. The turn pauses until the result is provided. In the web UI this is fulfilled by a connection picker; the result is the chosen **connection id**.
 
@@ -412,37 +310,19 @@ curl -sS -X POST \
 
 ## Grimoire artifacts (advanced)
 
-Internally Quill stores the automation as artifacts on the thread (`grimoire://`): `aop.spy` (SPy code), `aop.md` (the user-facing AOP), `connections.json`, `metadata.json`, `code_manifest.json`, and `context.md` (private agent notes). You can read these via the thread artifacts API, but for most integrations you only need the automation resource (`english_code` is the AOP) and the conversation.
+Internally Quill stores the automation as artifacts on the thread (`grimoire://`): `aop.spy` (SPy code), `aop.md` (the user-facing AOP), `connections.json`, `metadata.json`, `code_manifest.json`, and `context.md` (private agent notes). For most integrations you only need the automation resource (`english_code` is the AOP) and the conversation.
+
+To read one, percent-encode its URI in the path. The response carries the content base64-encoded in `data`:
 
 ```bash
-# List artifacts on the thread
-curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}/artifacts"
-
-# Read one artifact's content
-curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}/artifacts/grimoire://aop.md:content"
+curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}/artifacts/grimoire%3A%2F%2Faop.md:content"
+# → {"artifact": {"id": "grimoire://aop.md", "mime_type": "text/markdown", ...}, "data": "<base64>"}
 ```
+
+Listing Quill artifacts (`GET ${TBASE}/artifacts`) may return `500`, so read them by the names above.
 
 ---
 
 ## Other thread endpoints
 
-Paths are relative to `${TBASE}` unless noted.
-
-| Action | Method | Path |
-|--------|--------|------|
-| Get thread | GET | `${TBASE}` |
-| List threads | GET | `.../automations/{auto_id}/agents/quill2/threads` |
-| List events | GET | `${TBASE}/events` |
-| Send message (async) | POST | `${TBASE}/input` |
-| Live event stream (SSE) | GET | `${TBASE}/stream` |
-| Fulfil a remote tool call | POST | `${TBASE}/tool-results` |
-| Stop the current turn | POST | `${TBASE}:stop` |
-| Wake a sleeping thread | POST | `${TBASE}:wake` |
-| Fork the thread | POST | `${TBASE}:fork` |
-| Compact history | POST | `${TBASE}:compact` |
-| Upload a file | POST | `${TBASE}/uploads` (multipart) |
-| Read context (memory blocks) | GET | `${TBASE}/context` |
-| Submit feedback | POST | `${TBASE}/feedback` |
-| Thread artifacts | GET/PUT/DELETE | `${TBASE}/artifacts[...]` |
-
-> **Note on the sync endpoint.** Rain also defines `POST ${TBASE}/events` (a synchronous "send message and stream this turn's events on the response") but it is **not usable** on the PAT/automation-scoped path — it fails to resolve the agent. Use async `POST /input` plus `/stream` or `/events` polling instead.
+Stop, wake, fork, compact, rename, delete, feedback, context, and the rest work on `${TBASE}` exactly as described in [agents-api.md](agents-api.md). List the threads on an automation with `GET .../automations/{auto_id}/agents/quill2/threads`.

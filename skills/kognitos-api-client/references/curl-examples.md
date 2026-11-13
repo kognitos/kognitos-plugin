@@ -103,9 +103,10 @@ curl -sS -X POST \
 
 ### Step 4: Read the events until the turn ends
 
-Poll `GET .../events` (full ordered list each call) until the latest event is `interrupt` / `tool_approval_requested` (you must respond), `generation_failed` (error), or `generation_complete` **with nothing pending** (no unanswered interrupt/approval, no unfulfilled remote tool call). `generation_complete` fires multiple times mid-turn, so don't treat a bare one as done. Or subscribe to `GET .../stream` (SSE) for live events.
+Poll the thread until `status.state` is no longer a working state: `THREAD_STATUS_STATE_IDLE` (turn done), `..._AWAITING_ANSWER` / `..._AWAITING_APPROVAL` / `..._AWAITING_TOOL` (you must respond), or `..._FAILED`. Then read the events. Or subscribe to `GET .../stream` (SSE) for live events. The full state table is in [agents-api.md](agents-api.md).
 
 ```bash
+curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}" | jq '.status'
 curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}/events"
 ```
 
@@ -150,3 +151,46 @@ curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   "${KOGNITOS_BASE_URL}/api/v1/${RUN_ID}"
 ```
+
+## Agents (Agent Builder)
+
+Every Kognitos agent uses the same thread calls as Quill above. See [agents-api.md](agents-api.md) for the built-in agents, configuring an agent, versions, and export/import.
+
+### List and create agents
+
+```bash
+curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${KOGNITOS_ORGANIZATION_ID}/workspaces/${KOGNITOS_WORKSPACE_ID}/agents"
+
+curl -sS -X POST \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Support Triage"}' \
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${KOGNITOS_ORGANIZATION_ID}/workspaces/${KOGNITOS_WORKSPACE_ID}/agents"
+# → {"id": "support-triage", "name": "Support Triage", "version": "1"}
+```
+
+### Talk to an agent
+
+```bash
+curl -sS -X POST \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "First chat"}' \
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${KOGNITOS_ORGANIZATION_ID}/workspaces/${KOGNITOS_WORKSPACE_ID}/agents/${AGENT_ID}/threads"
+
+TBASE="${KOGNITOS_BASE_URL}/api/v1/organizations/${KOGNITOS_ORGANIZATION_ID}/workspaces/${KOGNITOS_WORKSPACE_ID}/agents/${AGENT_ID}/threads/${THREAD_ID}"
+
+curl -sS -X POST \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"message": {"content": "Hello"}}' \
+  "${TBASE}/input"
+
+# Poll until status.state is THREAD_STATUS_STATE_IDLE (or a waiting/failed state), then read the reply
+curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}" | jq '.status'
+curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}/events" \
+  | jq -r '[.events[] | .output_text.text // empty] | join("")'
+```
+
+The `jq` join prints every reply on the thread; slice the events after your last `input_text` for just the latest one.

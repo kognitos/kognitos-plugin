@@ -13,15 +13,17 @@ Use this skill when you are wiring application code to Kognitos APIs or SDKs, or
 1. Use [references/public-assets.md](references/public-assets.md) to ground the work in the public OpenAPI spec and public SDK.
 2. Use [references/curl-examples.md](references/curl-examples.md) to validate auth, payload shape, and endpoint behavior quickly.
 3. Use [references/automation-agent-api.md](references/automation-agent-api.md) when creating or refining automations through the AI agent.
-4. Use [references/integration-shape.md](references/integration-shape.md) to define the adapter boundary before writing production code.
-5. Use [references/error-handling.md](references/error-handling.md) when deciding retries, surfacing errors, or mapping upstream failures.
-6. Start from [assets/node-sdk-example.ts](assets/node-sdk-example.ts) or [assets/client-adapter-template.ts](assets/client-adapter-template.ts) for typed integration code.
+4. Use [references/agents-api.md](references/agents-api.md) when talking to any other Kognitos agent, or building your own agents with the Agent Builder.
+5. Use [references/integration-shape.md](references/integration-shape.md) to define the adapter boundary before writing production code.
+6. Use [references/error-handling.md](references/error-handling.md) when deciding retries, surfacing errors, or mapping upstream failures.
+7. Start from [assets/node-sdk-example.ts](assets/node-sdk-example.ts) or [assets/client-adapter-template.ts](assets/client-adapter-template.ts) for typed integration code.
 
 ## When To Load More
 
 - For the public SDK and OpenAPI sources: [references/public-assets.md](references/public-assets.md)
 - For `curl`-first exploration and reproductions: [references/curl-examples.md](references/curl-examples.md)
 - For creating automations via the AI agent: [references/automation-agent-api.md](references/automation-agent-api.md)
+- For other agents, the Agent Builder, and the thread protocol all agents share: [references/agents-api.md](references/agents-api.md)
 - For interface design and ownership: [references/integration-shape.md](references/integration-shape.md)
 - For retries, status mapping, and operator signals: [references/error-handling.md](references/error-handling.md)
 - For SDK usage in application code: [assets/node-sdk-example.ts](assets/node-sdk-example.ts)
@@ -36,6 +38,7 @@ Use this skill when you are wiring application code to Kognitos APIs or SDKs, or
 - **It's a conversational, multi-turn API.** Send a message (`POST .../input`), observe **events** (`GET .../events` poll, or `GET .../stream` SSE) until the turn ends, then respond. The agent is non-deterministic and may ask clarifying questions (**interrupts**) or request connections. Drive the conversation interactively rather than scripting it end-to-end.
 - **Drafts vs published, and authoring vs running.** Automations are versioned `major.minor`: Quill's autosaves create **draft** minor versions (`major == 0` = never published) — **Quill never publishes**. Publishing (`:publish`) is an explicit step that bumps the major. Running uses `:invoke`, where `stage` selects the version: `AUTOMATION_STAGE_DRAFT` (test/preview) or `AUTOMATION_STAGE_PUBLISHED` (production, after publishing).
 - **Draft = Quill, published = Astral (exception handling).** Draft runs (Quill's `TEST` runs *and* user `MANUAL` draft invokes) disable exception handling — failures surface inline with a traceback and **no Astral**, so you can invoke a draft yourself and ask Quill to monitor and debug that run. Published runs are managed by Astral's guidance-center flow ([exceptions-api.md](references/exceptions-api.md)).
+- **Quill is one of several agents, and they all share one thread protocol.** Built-in agents hang off an automation, a run, a connection, or the workspace; workspace agents are built in the Agent Builder (create, configure by talking to the Agent Builder Assistant, version, tag, export/import). Every agent uses the same create-thread, `POST .../input`, poll `status.state`, read events loop. Deploying a workspace agent is a UI step. See [references/agents-api.md](references/agents-api.md).
 - **What the user sees is the AOP** — a business-language Standard Operating Procedure (`english_code` on the automation, read-only). The SPy code is internal.
 - **Base URL pattern**: `https://app.<region>-1[.<env>].kognitos.com` (e.g. `https://app.us-1.kognitos.com`, or `https://app.us-1.dev.kognitos.com` for dev). EU customers swap `us-1` for `eu-1`.
 - **Auth**: Bearer token with a PAT (`kgn_pat_` prefix). The token identifies the user, not an org or workspace.
