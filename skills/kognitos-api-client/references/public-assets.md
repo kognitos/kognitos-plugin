@@ -13,7 +13,7 @@ Use this reference before choosing whether to reach for `curl`, the public SDK, 
 
 ## Base URL
 
-`KOGNITOS_BASE_URL` is `https://app.us-1.kognitos.com` for US customers. EU customers swap `us-1` for `eu-1`.
+`KOGNITOS_BASE_URL` is the host you sign in to, for example `https://app.us-1.kognitos.com`.
 
 ## API Surfaces
 
