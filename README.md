@@ -78,9 +78,11 @@ Once installed, Cursor's agent automatically attaches `rules/kognitos.mdc` (`alw
 
 After install, set up credentials once.
 
-### 1. Get a Kognitos PAT
+### 1. Create a Kognitos API key
 
-Generate a Personal Access Token from the Kognitos console. Tokens are prefixed `kgn_pat_`.
+In the Kognitos web app, open the user menu (your name, bottom left) and select **API Keys**, then **Create API Key**. Choose an expiration, the workspaces the key can access, and a permission level (**All**, **Read only**, or **Restricted**). The key is shown once and starts with `kgn_pat_`.
+
+Create the key in the organization you will work in: a key only works in the organization it was created in.
 
 ### 2. Create `.env.local`
 
@@ -97,7 +99,11 @@ If you don't know your org or workspace IDs yet, leave them blank. Set `KOGNITOS
 
 ### 3. API base URL
 
-`KOGNITOS_BASE_URL` is `https://app.us-1.kognitos.com` for US customers. EU customers swap `us-1` for `eu-1`.
+`KOGNITOS_BASE_URL` is the host you sign in to, without `/api/v1`: `https://app.us-1.kognitos.com` for most organizations. Organizations hosted in another region use that region's host (for example `https://app.uk-1.kognitos.com`).
+
+### Kognitos MCP server
+
+Kognitos also runs an MCP server at `https://mcp.us-1.kognitos.com/` that lets an assistant list automations, start runs, and triage exceptions directly. This plugin does not configure it; connect it separately (OAuth or an API key). [skills/kognitos-bootstrap/references/mcp-server.md](skills/kognitos-bootstrap/references/mcp-server.md) explains how, and when to use it instead of the REST API.
 
 ## Repository layout
 
@@ -128,8 +134,11 @@ Skills auto-invoke based on prompt matches against their descriptions. Try refer
 **`.env.local` values not picked up.**
 Confirm the file sits at the root of the working directory the agent is running in. The skills read from the current working directory, not from any parent.
 
-**Bootstrap reports "unknown region" or a 404 on the base URL.**
-Cross-check the region/env combination against the table above. Dev in EU is not publicly available yet.
+**Bootstrap gets a 404 or cannot connect to the base URL.**
+`KOGNITOS_BASE_URL` must be the host you sign in to (for example `https://app.us-1.kognitos.com`), without `/api/v1` and without a trailing slash.
+
+**Calls return 401 or 403.**
+A `401` means the key is missing, expired, or deleted. A `403` means the key does not cover the call: it only works in the organization it was created in, in the workspaces chosen for it, and at its permission level (a **Read only** key cannot invoke automations).
 
 **Cursor rule isn't being applied.**
 Check that the plugin is installed (Cursor → Plugins → search "kognitos"). If using a manual install, confirm the repo lives at `~/.cursor/plugins/kognitos/` and restart Cursor. If you copied files into a project instead, verify `rules/kognitos.mdc` landed at `.cursor/rules/kognitos.mdc` in that project.

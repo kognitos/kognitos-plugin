@@ -14,3 +14,15 @@ Use this reference when deciding how a change should move between environments.
 - Know whether the change can be reverted in code only.
 - Identify coupled workflow or config changes that also need rollback.
 - Prefer feature-gated rollout when the blast radius is uncertain.
+
+## Promoting An Automation
+
+On Kognitos, an automation is promoted by publishing it, not by moving it between environments:
+
+- Edits (by you or the automation builder agent) create **draft** versions. A draft runs only when invoked with `AUTOMATION_STAGE_DRAFT`, and its runs raise no exceptions.
+- **Publishing** (`:publish`, after an optional `:validatePublish`) turns the latest draft into the next published version. `AUTOMATION_STAGE_PUBLISHED` invokes run it, and its runs raise exceptions that are resolved in the Workbench.
+- Triggers belong to a stage. Check that the schedules and triggers production relies on fire the published version, not the draft.
+- To change a published automation that has no draft, fork a draft from it first (`:fork`), edit, test, and publish again.
+- Before the first published runs, make sure every connection the automation uses exists and is ready in that workspace.
+
+See [automation-agent-api.md](../../kognitos-api-client/references/automation-agent-api.md) for the version and stage rules.

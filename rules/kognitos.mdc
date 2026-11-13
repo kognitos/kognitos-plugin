@@ -37,4 +37,6 @@ KOGNITOS_ORGANIZATION_ID=<org-id>
 KOGNITOS_WORKSPACE_ID=<workspace-id>
 ```
 
-If org/workspace IDs are unknown, start with `skills/kognitos-bootstrap/SKILL.md` — it documents how to discover them from a token.
+`KOGNITOS_TOKEN` is a Kognitos API key. It only works in the organization it was created in, for the workspaces and permission level chosen when it was created. `KOGNITOS_BASE_URL` is the host the user signs in to, without `/api/v1`.
+
+If org/workspace IDs are unknown, start with `skills/kognitos-bootstrap/SKILL.md` — it documents how to discover them from a token, and when to use the Kognitos MCP server instead of the REST API.

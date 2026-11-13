@@ -94,6 +94,10 @@ contract; come here for the parser.
 
 ## Notes
 
+- IDP reads at most the first 100 pages of a document (20 with an AWS
+  Bedrock connection) and skips the rest without an exception. Pages
+  past that limit have no fields: show them as unextracted rather than
+  treating them as a parser failure.
 - The reference adapter is intentionally framework-agnostic. It depends
   only on `BigInt` (for the Decimal decoder) and standard `Map` /
   `Array`. Drop it into Node, Next.js (server or client), or any
