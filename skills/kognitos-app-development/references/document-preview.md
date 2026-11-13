@@ -1356,18 +1356,28 @@ consumes URLs only — it does not see Kognitos credentials or file ids.
   from the org-only download endpoint:
 
   ```
-  organizations/{org}/workspaces/{workspace}/files/{file}:download   ← try first
-  organizations/{org}/files/{file}:download                          ← fallback
+  GET /api/v1/organizations/{org}/workspaces/{workspace}/files/{file}:download   ← try first
+  GET /api/v1/organizations/{org}/files/{file}:download                          ← fallback
   ```
+
+  File values in run inputs and outputs carry the full resource name in
+  `file.remote` (`organizations/{org}/workspaces/{workspace}/files/{file}`
+  for workspace files). When you have it, take the scope from it and skip
+  the fallback.
 
   Without this fallback chain, half the runs in production silently
   fail to load the PDF. See
   [`kognitos-api-client/references/runs-api.md`](../../kognitos-api-client/references/runs-api.md)
-  for the run shape and the Files API for the download endpoint.
+  for the run shape and
+  [`kognitos-api-client/references/files-api.md`](../../kognitos-api-client/references/files-api.md)
+  for the download endpoint.
 
   Reference adapter:
 
   ```ts
+  // KOGNITOS_BASE_URL is the host only, e.g. https://app.us-1.kognitos.com
+  const KOGNITOS_API = `${process.env.KOGNITOS_BASE_URL}/api/v1`;
+
   export async function downloadKognitosFile(
     fileId: string,
     { org, workspace }: { org: string; workspace?: string | null },
@@ -1375,14 +1385,14 @@ consumes URLs only — it does not see Kognitos credentials or file ids.
     const auth = await getKognitosAuthHeaders();
     if (workspace) {
       const wsUrl =
-        `${KOGNITOS_BASE}/organizations/${org}/workspaces/${workspace}` +
+        `${KOGNITOS_API}/organizations/${org}/workspaces/${workspace}` +
         `/files/${fileId}:download`;
       const wsRes = await fetch(wsUrl, { headers: auth });
       if (wsRes.ok) return wsRes;
       // Fall through to org-scoped only on 404; bubble other errors.
       if (wsRes.status !== 404) return wsRes;
     }
-    const orgUrl = `${KOGNITOS_BASE}/organizations/${org}/files/${fileId}:download`;
+    const orgUrl = `${KOGNITOS_API}/organizations/${org}/files/${fileId}:download`;
     return fetch(orgUrl, { headers: auth });
   }
   ```

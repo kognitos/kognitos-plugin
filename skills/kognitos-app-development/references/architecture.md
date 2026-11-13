@@ -14,6 +14,8 @@ Use this reference when deciding what belongs in the app, what belongs in workfl
 - Keep workflow decisions explicit and traceable.
 - Prefer typed boundaries between UI state and workflow execution.
 - Centralize cross-cutting config rather than scattering environment checks.
+- Call Kognitos from the server side. The API key stays in server config and never reaches the browser.
+- Start long work and poll for it: invoke the automation, then poll the run. A REST request that takes longer than 15 seconds fails with `504`, so never hold a request open waiting for a run to finish.
 
 ## App Review Questions
 

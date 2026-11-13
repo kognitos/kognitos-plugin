@@ -24,17 +24,21 @@ Auth is a PAT: `Authorization: Bearer ${KOGNITOS_TOKEN}`. The agent endpoints ar
 | Agent | Id | Thread collection (relative path) | What it does |
 |-------|----|-----------------------------------|--------------|
 | Automation Builder Agent (Quill) | `quill2` | `/automations/{automation_id}/agents/quill2/threads` | Builds, tests, and maintains one automation. See [automation-agent-api.md](automation-agent-api.md). |
-| Step Tuning Agent | `prime` | `/automations/{automation_id}/agents/prime/threads` | Tunes a step of an automation. |
+| Step Tuning Agent | `prime` | `/automations/{automation_id}/agents/prime/threads` | Tunes the configuration values of an automation or one of its steps. Requires the `target` variable. |
 | Workbench Agent | `astral2` | `/automations/{automation_id}/runs/{run_id}/agents/astral2/threads` | Diagnoses what went wrong in a run. |
 | Workbench Report Agent | `astral-lite` | `/automations/{automation_id}/runs/{run_id}/agents/astral-lite/threads` | Writes a report about a run. |
-| Exception Chat Agent | `hermes` | `/agents/hermes/threads` | The chat in which exceptions are discussed and resolved. |
+| Exception Chat Agent | `hermes` | `/agents/hermes/threads` | The chat on a Workbench work item, in which exceptions are discussed and resolved. Requires the `workItemId` variable. |
 | Agent Builder Assistant | `smith` | `/agents/smith/threads` | Configures a workspace agent from a plain-language description. See [Building an agent](#building-an-agent-with-the-agent-builder-assistant). |
 | Integration Assistant | `shifu` | `/books/{integration}/versions/{version}/connections/{connection_id}/agents/shifu/threads` | Helps set up a connection, for example by filling in a trigger form. Mostly driven by the web UI. |
 
 Notes:
 
 - Use the scope shown. The same agent id under a different scope returns `404` (for example `quill2` only exists under an automation).
-- Not every built-in agent exposes every thread endpoint to API keys. For example, `prime` and `shifu` threads have no get or rename.
+- Some built-in agents need a variable when you create the thread; without it the create call returns `400` (`missing required variable`). `hermes` needs `{"variables": {"workItemId": "<work item id>"}}`. `prime` needs `{"variables": {"target": "main"}}` for the whole automation, or `steps/{step_id}:{function}` for one step.
+- Not every built-in agent exposes every thread endpoint to API keys. `prime` threads can't be read, renamed or deleted (`403`), and `shifu` threads can't be read or renamed. Without get, follow the turn with `/events` instead of `status`.
+- Threads of built-in agents come back with an empty `agent_id`. Variable names follow the agent: most use camelCase (`automationId`, `runId`), `shifu` uses snake_case (`connection_id`, `book_name`).
+- `hermes` wraps the text meant for the user in `<user-message>` tags inside `output_text`. Strip the tags before you show it.
+- `astral2` and `astral-lite` are built for runs that raised an exception. On a run that completed they reply that there is nothing to diagnose or report.
 - Exceptions on published runs have their own API with a resolution flow on top of these agents. Prefer [exceptions-api.md](exceptions-api.md) over driving `hermes` or `astral2` directly.
 
 ## Workspace agents (Agent Builder)
@@ -153,8 +157,9 @@ curl -sS -X DELETE -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/agents/${AGENT_ID}"
 ```
 
-- The exported file carries the agent's `id`, `name`, and full configuration, including the organization and workspace ids it came from. To import a copy next to the original, change `id` and `name` in the file first.
-- Duplicating fails with `ALREADY_EXISTS` if the new name's id is taken.
+- The exported file carries the agent's `id`, `name`, and full configuration, including the organization and workspace ids it came from (as fixed values of the `organizations` and `workspaces` variables).
+- Importing a file whose `id` already exists in the workspace updates that agent: it saves a new version, or returns a `warnings` entry and no new version when nothing changed. It does not fail. To import a copy next to the original, change `id` and `name` in the file first.
+- Duplicating with an explicit `name` whose id is taken fails with `409 ALREADY_EXISTS` (`reason: AGENT_ALREADY_EXISTS`); so does creating an agent with a taken name. Without a `name`, duplicates are numbered (`Copy of <name> (2)`) and never conflict.
 
 ---
 
@@ -219,10 +224,13 @@ Poll `GET ${TBASE}` and read `status.state`:
 | `THREAD_STATUS_STATE_AWAITING_TOOL` | A remote tool call needs a result (`status.remote_count` open calls) | Post to `/tool-results` |
 | `THREAD_STATUS_STATE_FAILED` | The turn failed (`status.error_kind`, `status.error_message`) | Report it; retry if it makes sense |
 | `THREAD_STATUS_STATE_STOPPED` | The turn was stopped | Send a new message to continue |
-| `THINKING`, `RESPONDING`, `EXECUTING_TOOL`, `DELEGATING`, `COMPACTING`, `TRANSFERRING`, `RETRYING` (all `THREAD_STATUS_STATE_`-prefixed) | Working | Keep polling |
+| `THINKING`, `RESPONDING`, `EXECUTING_TOOL`, `DELEGATING`, `COMPACTING`, `TRANSFERRING`, `RETRYING` (all `THREAD_STATUS_STATE_`-prefixed) | Working (`EXECUTING_TOOL` carries a `status.tool_label`) | Keep polling |
 | `THREAD_STATUS_STATE_SLEEPING` | The agent paused itself until `status.wake_at` (for example between checks on a run) | Keep polling, or `:wake` it |
 
-Poll every few seconds with an overall timeout, and stop on every waiting or final state, not only `IDLE`. Right after you post, the thread can still show the `IDLE` from the previous turn: treat `IDLE` as done only once `status_updated_at` is later than the time you posted, or once the events show your message followed by output.
+Poll every few seconds with an overall timeout, and stop on every waiting or final state, not only `IDLE`. `IDLE` alone does not prove the turn is over:
+
+- Right after you post, the thread can still show the `IDLE` from the previous turn. Wait until `status_updated_at` is later than the time you posted.
+- Mid-turn, the status can show `IDLE` for a second or two while a tool is still running (for example while Quill starts a test run, just before it sleeps). Treat the turn as done only when `IDLE` holds on two polls a few seconds apart and every `tool_call_start` since your message has a matching `tool_result`.
 
 ### Read the events
 
@@ -242,17 +250,21 @@ Each event has an increasing `id`, a `recorded_at_ms`, a `deleted` flag, and exa
 | `input_text` | Your message, echoed |
 | `reasoning_text` | The agent's thinking, streamed in pieces |
 | `output_text` | The agent's reply, streamed in pieces. Each piece is its own event; join consecutive `output_text.text` values in order |
-| `tool_call_start` | The agent called a tool (`id`, `name`, `is_remote`). `id` is the `tool_call_id` you use when replying |
-| `tool_call_argument` | One argument of the current tool call |
-| `tool_result` | A tool's result (`tool_call_id`, `success`, `content`) |
+| `tool_call_start` | The agent called a tool (`id`, `name`, `is_remote`, `status_template`). `id` is the `tool_call_id` you use when replying |
+| `tool_call_argument` | One argument of the current tool call (`name`, `value`) |
+| `tool_result` | A tool's result (`tool_call_id`, `name`, `success`, `content`, and `error` on failure) |
 | `interrupt` | The agent asked a question and paused |
 | `interrupt_answer` | Your recorded answer |
 | `tool_approval_requested` | A tool call is waiting for approval |
-| `sleep_requested` | The agent paused itself for a while |
-| `generation_complete` | One model call finished (`model`, `usage`, `agent_version`). A turn can contain several |
-| `generation_failed` | The turn failed (`message`, `kind`, `retryable`) |
+| `sleep_requested` | The agent paused itself for a while (`sleep_id`, `seconds`, `wake_at`) |
+| `sleep_completed` | The pause ended (`slept_for_seconds`; `interrupted_by_user: true` after `:wake`) |
+| `compact_start`, `compact_complete` | History was compacted (`compact_id`; `compact_complete.content` is the summary) |
+| `generation_complete` | One model call finished (`id`, `model`, `provider`, `usage`, `agent_version`). A turn can contain several |
+| `generation_failed` | The turn failed (`message`, `kind`, `retryable`). A `:stop` also records one, with `kind: GENERATION_ERROR_KIND_STOPPED` |
 
-`/stream` replays the thread's history from the first event, then stays open for new events. Each message is a `data:` line with one JSON event followed by an `id:` line; lines starting with `:` are keep-alives. Resume after a dropped connection with the `Last-Event-ID` header. Hold the connection for the whole turn, or poll `/events` instead.
+`/stream` replays the thread's history from the first event, then stays open for new events. Each message is a `data:` line with one JSON event followed by an `id:` line; lines starting with `:` are comments (the first is `: connected`). Resume after a dropped connection with the `Last-Event-ID` header: the replay starts at the next event. The stream does not close or send a marker when the turn ends, so use the thread status to decide when to stop reading, or poll `/events` instead.
+
+Not every event carries `recorded_at_ms`. Order events by `id`.
 
 Tool calls the agent runs internally are informational: the set of tools can change, so don't depend on their names, and don't show tool names or raw arguments to business users. You only act on **remote** tool calls (`is_remote: true`).
 
@@ -341,10 +353,10 @@ Paths are relative to `${TBASE}` unless noted. Built-in agents may expose a subs
 | Get thread | GET | `${TBASE}` | Includes `status` |
 | Rename | PATCH | `${TBASE}` | `{"title": "...", "description": "..."}` |
 | Delete thread | DELETE | `${TBASE}` | `204` |
-| Stop the current turn | POST | `${TBASE}:stop` | Body `{}`. `{"stopped": false}` when nothing was running |
+| Stop the current turn | POST | `${TBASE}:stop` | Body `{}`. `{"stopped": true}` mid-turn, then the status goes to `STOPPED`; `{"stopped": false}` when nothing was running |
 | Wake a sleeping thread | POST | `${TBASE}:wake` | Body `{}`. `{"woken": false}` when it wasn't sleeping |
 | Fork | POST | `${TBASE}:fork` | `{"title": "..."}`; copies the history into a new thread |
-| Compact history | POST | `${TBASE}:compact` | Summarizes older events to free context |
+| Compact history | POST | `${TBASE}:compact` | Body `{}`. Returns `{"compact_id"}` and summarizes older events to free context; the events stay readable. The status can stay at `RESPONDING` after `compact_complete` until you send the next message |
 | Context usage | GET | `${TBASE}/context` | Token use per context item and the model's limits |
 | Feedback on a reply | POST | `${TBASE}/feedback` | `{"generation_id": "<generation_complete.id>", "feedback_type": "FEEDBACK_TYPE_LIKE"}` (or `FEEDBACK_TYPE_DISLIKE`) |
 | Active plan | GET | `${TBASE}/plan/active` | `404` when the thread has no plan |

@@ -6,6 +6,14 @@
 - Error, loading, and empty states are handled.
 - Naming is generic enough to survive template reuse.
 
+## If the change shows a live agent chat
+
+- The thread's event history is the source of truth; the stream only speeds it up, and events are merged by `id`.
+- The end of a turn comes from the thread's `status.state`, and waiting states (question, approval, tool result) are offered to the user.
+- Every send starts a cancellable polling loop with an overall cap; switching threads or unmounting cancels it.
+- Tool names, tool arguments, and reasoning are not shown to business users.
+- Attachments render as links that open the document.
+
 ## If the change renders an extracted-document preview
 
 - The IDP payload is normalized in an adapter (parser + helpers), not in

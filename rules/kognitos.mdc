@@ -15,12 +15,13 @@ Cursor does not have a native skills runtime, so treat the skills as authoritati
 - `skills/kognitos-app-development/SKILL.md` — build Kognitos-backed applications with clear architecture boundaries and Lattice UI patterns.
 - `skills/kognitos-sop-development/SKILL.md` — design and refine Kognitos SOPs with traceable decision points.
 - `skills/kognitos-api-client/SKILL.md` — integrate Kognitos APIs through explicit adapters and stable request contracts.
+- `skills/kognitos-idp-payload/SKILL.md` — decode IDP extraction payloads (`state.completed.outputs.idp_extraction_results`) into a flat, viewer-ready field list.
 - `skills/kognitos-debugging/SKILL.md` — isolate failure boundaries and capture evidence when debugging Kognitos apps and workflows.
 - `skills/kognitos-deployment/SKILL.md` — promote Kognitos changes across environments with explicit release checks.
 
 ## How to use
 
-1. Identify which skill the user's request maps to (bootstrap, app dev, SOP, API, debugging, deployment).
+1. Identify which skill the user's request maps to (bootstrap, app dev, SOP, API, IDP payload, debugging, deployment).
 2. Read that skill's `SKILL.md` before writing code or giving advice.
 3. Prefer the patterns, file layouts, and conventions documented in the skill over inventing new ones.
 4. If the skill's default workflow points to a file under `references/`, open and follow it.
@@ -36,4 +37,6 @@ KOGNITOS_ORGANIZATION_ID=<org-id>
 KOGNITOS_WORKSPACE_ID=<workspace-id>
 ```
 
-If org/workspace IDs are unknown, start with `skills/kognitos-bootstrap/SKILL.md` — it documents how to discover them from a token.
+`KOGNITOS_TOKEN` is a Kognitos API key. It only works in the organization it was created in, for the workspaces and permission level chosen when it was created. `KOGNITOS_BASE_URL` is the host the user signs in to, without `/api/v1`.
+
+If org/workspace IDs are unknown, start with `skills/kognitos-bootstrap/SKILL.md` — it documents how to discover them from a token, and when to use the Kognitos MCP server instead of the REST API.
