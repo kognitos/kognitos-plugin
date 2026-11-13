@@ -146,7 +146,7 @@ curl -sS -X POST \
   "${TBASE}/tool-results"
 ```
 
-The agent resumes immediately with that connection. It will not save an automation that depends on an unresolved connection. (Apps requiring OAuth also need an `:authorize` step — see [books-api.md](books-api.md).)
+The agent resumes immediately with that connection. It will not save an automation that depends on an unresolved connection. (Apps requiring OAuth also need an authorize step, `PUT .../connections/{connection_id}/authorize` — see [books-api.md](books-api.md).)
 
 ---
 
@@ -266,7 +266,7 @@ curl -sS -X POST \
 curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${KOGNITOS_BASE_URL}/api/v1/${RUN_ID}"
 ```
 
-The run `state` is a one-of: `pending`, `executing`, `stopping`, `stopped`, `completed` (outputs in `state.completed.outputs`), `failed` (`id`/`description`/`location`), `awaiting_guidance` (`exception`/`description`/`location`), `archived`. Outputs are keyed by name with `commonV1Value` types, e.g. `{"text": "INV-112233"}` or `{"number": {"lo": 114800, "mid": 0, "hi": 0, "flags": 0}}`. **File** outputs are returned as a `bishop://<file-id>` reference; download the bytes from the files API (`GET .../files/<file-id>:download` — the `:download` verb, not the bare resource). See [runs-api.md](runs-api.md) and [files-api.md](files-api.md).
+The run `state` is a one-of: `pending`, `executing`, `stopping`, `stopped`, `completed` (outputs in `state.completed.outputs`), `failed` (`id`/`description`/`location`), `awaiting_guidance` (`exception`/`description`/`location`), `awaiting_answer`. Archiving is not a state: an archived run keeps its state and gains `archived_time`. Outputs are keyed by name with `commonV1Value` types, e.g. `{"text": "INV-112233"}` or `{"number": {"lo": 114800, "mid": 0, "hi": 0, "flags": 0}}`. **File** outputs come back as `{"file": {"remote": "organizations/{org}/workspaces/{ws}/files/{file_id}"}}`; download the bytes with `GET /api/v1/<that name>:download` (the `:download` verb, not the bare resource). See [runs-api.md](runs-api.md) and [files-api.md](files-api.md).
 
 ### `invocation_source` — who triggered the run
 
