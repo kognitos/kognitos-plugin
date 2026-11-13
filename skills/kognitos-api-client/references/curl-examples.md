@@ -144,12 +144,12 @@ curl -sS -X POST \
 
 ### Step 7: Poll run status
 
-Look for `state.completed.outputs` in the response.
+`:invoke` returns `run_id` as the run's full resource name (`organizations/.../automations/.../runs/{run}`); its last segment is the run id. Look for `state.completed.outputs` in the response.
 
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${KOGNITOS_BASE_URL}/api/v1/${RUN_ID}"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${KOGNITOS_ORGANIZATION_ID}/workspaces/${KOGNITOS_WORKSPACE_ID}/automations/${AUTOMATION_ID}/runs/${RUN_ID}"
 ```
 
 ## Agents (Agent Builder)

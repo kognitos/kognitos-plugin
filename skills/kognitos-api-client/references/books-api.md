@@ -124,7 +124,7 @@ curl -sS -X PUT \
   "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/connections/${CONNECTION_ID}/authorize"
 ```
 
-Returns an authorization URL for the user to complete OAuth.
+This is a `PUT` on the `/authorize` sub-path (not a `:authorize` custom method). For an OAuth connection it returns `{"authorize_url": {"url": "..."}}`; open that URL for the user to complete OAuth. An unknown connection returns `404`.
 
 ## Integration Discovery Flow
 

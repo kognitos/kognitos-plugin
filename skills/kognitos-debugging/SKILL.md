@@ -21,9 +21,9 @@ When debugging run failures or exceptions, use the API endpoints from the `kogni
 1. **List recent runs** to find the failing run — see [runs-api.md](../kognitos-api-client/references/runs-api.md).
 2. **List run events** for the step-by-step execution log — the primary debugging view.
 3. **Inspect exceptions** to see error details, group, and resolution status — see [exceptions-api.md](../kognitos-api-client/references/exceptions-api.md).
-4. **Read the resolution thread** (`list_events` on the exception) to see what the agent tried.
-5. **Reply to the exception agent** to guide resolution, or **assign** to an operator.
-6. **Check troubleshooting guides** for known resolutions before escalating.
+4. **Read the resolution thread** (the exception's Workbench work item chat) to see what the agent tried.
+5. **Reply in the work item's chat** to guide resolution, submit a retry or stop decision, or **assign** to an operator.
+6. **Check guide entries** for known resolutions before escalating.
 7. **Generate a run report** from [run-report-template.md](../kognitos-api-client/assets/run-report-template.md) to capture the full audit trail.
 
 ## When To Load More

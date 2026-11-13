@@ -40,7 +40,7 @@ Step-by-step record of actions taken during the run.
 |------|------|-------|
 | {{output_name}} | {{output_type}} | {{output_value}} |
 
-<!-- Populated from get_run_outputs. -->
+<!-- Populated from the run's state.completed.outputs, or the execution's outputs for a run that has not completed. -->
 <!-- For file outputs, link to the file resource name. -->
 <!-- For numeric outputs, show the unwrapped value (e.g. 500500, not the protobuf envelope). -->
 
@@ -52,8 +52,8 @@ Step-by-step record of actions taken during the run.
 
 ### Exception: {{exception_id}}
 
-- **Group:** {{exception_group}} (`missing_values` | `user_system_error` | `internal_error`)
-- **State:** {{exception_state}} (`PENDING` | `RESOLVED` | `ARCHIVED`)
+- **Group:** {{exception_group}} (`missing_values` | `invalid_values` | `user_system_error` | `internal_error` | `validation_error` | ungrouped)
+- **State:** {{exception_state}} (`EXCEPTION_STATE_PENDING` | `EXCEPTION_STATE_RESOLVED` | `EXCEPTION_STATE_ARCHIVED`)
 - **Location:** {{exception_location}}
 - **Message:** {{exception_message}}
 - **Assignee:** {{assignee}}
@@ -64,7 +64,7 @@ Step-by-step record of actions taken during the run.
 |---|-----------|--------|---------|
 | 1 | {{event_time}} | {{sender}} | {{message}} |
 
-<!-- Populated from exception list_events. Shows the conversation between operators and the resolution agent. -->
+<!-- Populated from the Workbench work item's chat (hermes thread events). Shows the conversation between operators and the resolution agent. -->
 
 ---
 
@@ -76,7 +76,7 @@ Step-by-step record of actions taken during the run.
 |----------|-------|------------|----------|
 | {{guide_id}} | {{guide_title}} | {{exception_id}} | {{decision_summary}} |
 
-<!-- Populated from get_guide / list_guides. -->
+<!-- Populated from the automation's guide entries. -->
 <!-- Also record manual operator decisions not captured in guides: -->
 <!-- e.g. "Operator replied with 'use backup email' to resolve missing_values exception" -->
 
@@ -84,7 +84,7 @@ Step-by-step record of actions taken during the run.
 
 ## Summary
 
-- **Result:** {{COMPLETED / FAILED / AWAITING GUIDANCE / STOPPED — with reason}}
+- **Result:** {{COMPLETED / FAILED / AWAITING GUIDANCE / AWAITING ANSWER / STOPPED — with reason}}
 - **Exceptions raised:** {{count}} ({{resolved_count}} resolved, {{pending_count}} pending)
 - **Guidance entries applied:** {{guide_count}}
 - **Notes:** {{free-text notes from the reviewer}}
@@ -98,10 +98,10 @@ This template is designed to be populated from Kognitos API responses:
 1. Run metadata         → GET .../runs/{run_id}
 2. Inputs               → from the invocation request or run object
 3. Execution log        → GET .../runs/{run_id}/events
-4. Outputs              → GET .../runs/{run_id}:getOutputs (or from run state.completed.outputs)
+4. Outputs              → run state.completed.outputs, or GET .../workspaces/{ws}/executions/{execution_id}/outputs
 5. Exceptions           → GET .../exceptions?filter=run="..."
-6. Resolution threads   → GET .../runs/{run_id}/agents/{agent_id}/events
-7. Guides               → GET .../automations/{id}/guides
+6. Resolution threads   → GET .../workUnits?filter=source_ref="<exception name>", then GET .../agents/hermes/threads/{thread}/events
+7. Guides               → GET .../automations/{id}/guideEntries
 
 The markdown structure is intentionally flat and table-heavy so it converts cleanly to:
 - HTML via any CommonMark renderer (pandoc, marked, remark)

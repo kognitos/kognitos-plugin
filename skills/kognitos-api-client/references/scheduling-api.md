@@ -16,7 +16,7 @@ curl -sS \
   "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/schedule"
 ```
 
-Returns the schedule configuration including start time, repeat interval, patterns, and enabled state.
+Returns the schedule's `config` (start, repeat interval, patterns, end, active window), `enabled`, a readable `summary`, the upcoming `next_run_times` and, for a schedule that ends after N runs, `remaining_occurrences`. An automation without a schedule returns `404`.
 
 ### Create schedule
 
@@ -39,6 +39,8 @@ curl -sS -X POST \
   }' \
   "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}/schedule"
 ```
+
+A scheduled run gets no inputs, so every input of the automation needs a default value or an optional type; otherwise creating the schedule fails with `FAILED_PRECONDITION`.
 
 ### Update schedule
 
@@ -156,6 +158,14 @@ Ordinal day (e.g. "second Tuesday"):
 | `SCHEDULE_END_TYPE_NEVER` | Run indefinitely |
 | `SCHEDULE_END_TYPE_ON_DATE` | Stop on a specific date (requires `end_date`) |
 | `SCHEDULE_END_TYPE_AFTER_OCCURRENCES` | Stop after N runs (requires `max_occurrences`) |
+
+```json
+{"end": {"end_type": "SCHEDULE_END_TYPE_AFTER_OCCURRENCES", "max_occurrences": 10}}
+```
+
+```json
+{"end": {"end_type": "SCHEDULE_END_TYPE_ON_DATE", "end_date": {"year": 2026, "month": 12, "day": 31}}}
+```
 
 ### Active window
 

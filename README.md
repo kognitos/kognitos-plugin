@@ -1,12 +1,12 @@
 # Kognitos Plugin
 
-Structured Kognitos development skills — bootstrap, app development, SOP design, API integration, debugging, and deployment — packaged for Claude Code, Codex CLI, and Cursor.
+Structured Kognitos development skills — bootstrap, app development, SOP design, API integration, IDP payload decoding, debugging, and deployment — packaged for Claude Code, Codex CLI, and Cursor.
 
 The canonical content is the skill set under `skills/`. Each skill is a self-contained playbook with a default `SKILL.md` workflow and progressive-disclosure references, scripts, and assets.
 
 ## What you get
 
-Six skills, installable as a single plugin:
+Seven skills, installable as a single plugin:
 
 | Skill | Use when you need to… |
 | --- | --- |
@@ -14,6 +14,7 @@ Six skills, installable as a single plugin:
 | `kognitos-app-development` | Build a Kognitos-backed app with clear architecture and Lattice UI patterns. |
 | `kognitos-sop-development` | Design and refine Kognitos SOPs with traceable decision points. |
 | `kognitos-api-client` | Integrate Kognitos APIs through explicit adapters and stable request contracts. |
+| `kognitos-idp-payload` | Decode IDP extraction payloads into a flat, viewer-ready field list for document previews and reviews. |
 | `kognitos-debugging` | Isolate failure boundaries and capture evidence for a Kognitos bug. |
 | `kognitos-deployment` | Promote changes across environments with explicit release checks. |
 

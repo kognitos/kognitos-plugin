@@ -18,9 +18,9 @@ Use this skill when changes are moving from development toward shared environmen
 
 When deploying automations, use the API endpoints from the `kognitos-api-client` skill:
 
-- **Compare DRAFT vs PUBLISHED** — use the `query` endpoint with `stage` parameter to inspect what's in progress vs what's live. See [automation-agent-api.md](../kognitos-api-client/references/automation-agent-api.md).
+- **Compare DRAFT vs PUBLISHED** — fetch each version with `GET .../automations/{automation}:query?stage=AUTOMATION_STAGE_DRAFT` and `?stage=AUTOMATION_STAGE_PUBLISHED` to inspect what's in progress vs what's live (a stage with no version returns `404`). To list automations by stage, filter the list with `stage = "PUBLISHED"` or `stage = "DRAFT"`. See [automation-agent-api.md](../kognitos-api-client/references/automation-agent-api.md).
 - **Set up schedules** — create, update, enable, or disable recurring runs. See [scheduling-api.md](../kognitos-api-client/references/scheduling-api.md).
-- **Monitor post-deployment** — use run stats and exception insights to verify the deployment is healthy. See [analytics-api.md](../kognitos-api-client/references/analytics-api.md).
+- **Monitor post-deployment** — use run aggregates and exception insights to verify the deployment is healthy. See [analytics-api.md](../kognitos-api-client/references/analytics-api.md).
 
 ## When To Load More
 

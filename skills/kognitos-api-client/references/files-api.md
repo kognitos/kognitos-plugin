@@ -4,61 +4,85 @@ Use this reference when you need to upload, inspect, or read files used by autom
 
 ## Overview
 
-Files are organization-scoped resources. Automations that accept file inputs expect a file resource name (not raw content). The typical flow is: upload the file, get its resource name, then pass it as an automation input.
+Files are workspace-scoped resources named `organizations/{org}/workspaces/{ws}/files/{file}`. Automations that accept file inputs expect a file resource name (not raw content). The typical flow is: upload the file, get its resource name, then pass it as an automation input.
+
+Older files may be organization-scoped (`organizations/{org}/files/{file}`). Read them through the matching org-scoped routes below; new uploads must be workspace-scoped. Use the scope the file's resource name carries: a workspace file is not found on the org-scoped routes.
 
 ## Endpoints
 
 ### Upload a file
 
-For small files (under 1 MB), encode the content as base64 and upload directly:
-
-```bash
-# Encode and upload
-CONTENT_B64=$(base64 < input.csv)
-
-curl -sS -X POST \
-  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "{\"filename\": \"input.csv\", \"content_base64\": \"${CONTENT_B64}\"}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/files:upload"
-```
-
-For larger or binary files, omit `content_base64` to get a pre-signed upload URL:
+Upload the content as `multipart/form-data` with the file in a form field named `file`:
 
 ```bash
 curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"filename": "large-report.pdf"}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/files:upload"
+  -F "file=@input.csv" \
+  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files:upload"
 ```
 
-The response includes an `upload_url` — use it to PUT the file content directly.
+The response (HTTP 201) holds the file's metadata; `metadata.name` is the file resource name:
+
+```json
+{"metadata": {"name": "organizations/.../workspaces/.../files/...", "filename": "input.csv", "sizeBytes": 8, "mimeType": "text/csv", "createTime": "..."}}
+```
+
+To let someone without the token upload (for example, a browser or another machine), generate a pre-signed upload URL:
+
+```bash
+curl -sS -X POST \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files:generateUploadUrl"
+```
+
+The response's `upload_uri` takes the same multipart POST without an `Authorization` header, and returns the same `metadata` body. It expires after one hour. Quote the URL and pass `--globoff`:
+
+```bash
+curl -sS --globoff -F "file=@large-report.pdf" "${UPLOAD_URI}"
+```
 
 ### Get file metadata
 
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/files/${FILE_ID}"
+  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}/metadata"
 ```
 
-Returns: filename, size, MIME type, creation time.
+Returns `name`, `filename`, `mime_type`, `size_bytes` (a string), `create_time` and `sha256_hash`. For an org-scoped file use `.../organizations/${ORG}/files/${FILE_ID}/metadata`.
 
-### Read file content
+### Download file content
+
+Stream the file's bytes with the token (the response carries `Content-Type` and `Content-Disposition`):
 
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/files/${FILE_ID}:read"
+  -o input.csv \
+  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}:download"
 ```
 
-- Text files (`text/*`, JSON, CSV, XML, YAML) — content returned inline.
-- Binary files — metadata and a download URL returned.
+For an org-scoped file use `.../organizations/${ORG}/files/${FILE_ID}:download`.
+
+### Generate a download URL
+
+To hand a file to a client that has no token, generate a pre-signed download URL (valid for one hour):
+
+```bash
+curl -sS -X POST \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}:generateDownloadUrl"
+```
+
+Returns `download_uri`. For an Arrow table (`application/vnd.apache.arrow.file`), pass `{"format": "DOWNLOAD_FORMAT_CSV"}` to download it converted to CSV. For an org-scoped file use `.../organizations/${ORG}/files/${FILE_ID}:generateDownloadUrl`.
 
 ## Using Files as Automation Inputs
 
-After uploading, the file resource name (e.g. `organizations/{org}/files/{file_id}`) can be passed as an input when invoking an automation:
+Pass the file resource name as a `remote` file value when invoking an automation:
 
 ```bash
 curl -sS -X POST \
@@ -67,8 +91,10 @@ curl -sS -X POST \
   -d '{
     "stage": "AUTOMATION_STAGE_DRAFT",
     "inputs": {
-      "input_file": {"file": {"name": "organizations/${ORG}/files/${FILE_ID}"}}
+      "input_file": {"file": {"remote": "organizations/'"${ORG}"'/workspaces/'"${WS}"'/files/'"${FILE_ID}"'"}}
     }
   }' \
   "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}:invoke"
 ```
+
+File values in run inputs and outputs use the same shape, `{"file": {"remote": "<file resource name>"}}`. A file value keyed `name` instead of `remote` is rejected with `INVALID_ARGUMENT`.
