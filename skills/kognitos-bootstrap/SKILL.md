@@ -34,6 +34,6 @@ See [references/mcp-server.md](references/mcp-server.md) to connect a client.
 
 ## Notes
 
-- `KOGNITOS_BASE_URL` is the host you sign in to, without `/api/v1`: `https://app.us-1.kognitos.com` for most organizations. Organizations hosted in another region use that region's host (for example `https://app.uk-1.kognitos.com`).
+- `KOGNITOS_BASE_URL` is the host you sign in to, without `/api/v1`: `https://app.us-1.kognitos.com` for most organizations. Organizations hosted in another region use that region's host.
 - API keys (Personal Access Tokens) use the `kgn_pat_` prefix and authenticate via `Authorization: Bearer <token>`.
 - A key belongs to the organization it was created in and is limited to the workspaces and permission level chosen when it was created. Org and workspace IDs still go in every request path.

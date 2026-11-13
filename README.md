@@ -99,7 +99,7 @@ If you don't know your org or workspace IDs yet, leave them blank. Set `KOGNITOS
 
 ### 3. API base URL
 
-`KOGNITOS_BASE_URL` is the host you sign in to, without `/api/v1`: `https://app.us-1.kognitos.com` for most organizations. Organizations hosted in another region use that region's host (for example `https://app.uk-1.kognitos.com`).
+`KOGNITOS_BASE_URL` is the host you sign in to, without `/api/v1`: `https://app.us-1.kognitos.com` for most organizations. Organizations hosted in another region use that region's host.
 
 ### Kognitos MCP server
 

@@ -4,7 +4,7 @@ Use this reference when the user wants their AI assistant to work in Kognitos di
 
 ## Server
 
-- URL: `https://mcp.us-1.kognitos.com/` (Streamable HTTP transport, nothing to install). Organizations hosted in another region use that region's host, for example `https://mcp.uk-1.kognitos.com/`.
+- URL: `https://mcp.us-1.kognitos.com/` (Streamable HTTP transport, nothing to install). Organizations hosted in another region use that region's host.
 - Auth: **OAuth** for interactive clients (the client opens the Kognitos sign-in page and refreshes the token itself), or an **API key** in `Authorization: Bearer <key>` for scripts and CI. The key's workspace scope and permission level apply to the tools too.
 - The OAuth callback port is `3777`. Clients that let you set it must use it, or sign-in fails with a callback URL mismatch.
 

@@ -4,7 +4,7 @@ Use this reference when bootstrap work depends on clear environment boundaries.
 
 ## Base URL
 
-`KOGNITOS_BASE_URL` is the host you sign in to, without `/api/v1`. It is `https://app.us-1.kognitos.com` for most organizations; organizations hosted in another region use that region's host (for example `https://app.uk-1.kognitos.com`). API paths start at `${KOGNITOS_BASE_URL}/api/v1`.
+`KOGNITOS_BASE_URL` is the host you sign in to, without `/api/v1`. It is `https://app.us-1.kognitos.com` for most organizations; organizations hosted in another region use that region's host. API paths start at `${KOGNITOS_BASE_URL}/api/v1`.
 
 ## Environment Variables
 

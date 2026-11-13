@@ -20,7 +20,7 @@ KOGNITOS_ORGANIZATION_ID=
 KOGNITOS_WORKSPACE_ID=
 ```
 
-`KOGNITOS_BASE_URL` is the host you sign in to. Organizations hosted outside the US region use their region's host (for example `https://app.uk-1.kognitos.com`).
+`KOGNITOS_BASE_URL` is the host you sign in to. Organizations hosted in another region use the host they sign in to.
 
 ## 3. Verify Token and Discover IDs
 
