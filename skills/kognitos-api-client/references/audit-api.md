@@ -4,7 +4,7 @@ Use this reference when you need to answer "who did what, and when" in an organi
 
 ## Overview
 
-Every Kognitos service records the actions it performs as **audit events**. Events are kept per organization and cover all of its workspaces. The API is read-only.
+Kognitos services record actions as **audit events**. Events are kept per organization and cover all of its workspaces. The API is read-only. Not every action is audited yet: automation and run actions are, but check that the actions you care about appear before you rely on the log for them.
 
 All paths are organization-scoped:
 
@@ -61,7 +61,7 @@ curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
 |-------|---------|
 | `event_type` | `event_type = "AUDIT_EVENT_TYPE_AUTOMATION_CREATED"` |
 | `category` | `category = "AUDIT_CATEGORY_RUN_LIFECYCLE"` |
-| `actor` (alias `actor_user_id`) | `actor = "{user_id}"` |
+| `actor` (alias `actor_user_id`) | `actor = "{user_id}"`. Your own id: `GET /api/v1/me` returns `name: users/{user_id}` |
 | `workspace_id` | `workspace_id = "{workspace_id}"` |
 | `event_time` | `event_time >= "2026-11-01T00:00:00Z"` |
 | `status` | `status = "AUDIT_STATUS_FAILURE"` |
@@ -80,7 +80,7 @@ curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
 
 - `category` groups event types, for example `AUDIT_CATEGORY_RUN_LIFECYCLE`, `AUDIT_CATEGORY_AUTOMATION_LIFECYCLE`, `AUDIT_CATEGORY_VERSIONING_PUBLISHING`, `AUDIT_CATEGORY_EXCEPTIONS_RUN_INTERVENTION`, `AUDIT_CATEGORY_WORK_ITEMS`, `AUDIT_CATEGORY_AUTHENTICATION_SECURITY`, `AUDIT_CATEGORY_DATA_ACCESS_EXPORTS`, `AUDIT_CATEGORY_ORG_WORKSPACE_ADMINISTRATION`.
 - `event_type` is the specific action (`AUDIT_EVENT_TYPE_RUN_STARTED`, `..._PUBLISH_SUCCEEDED`, `..._EXCEPTION_ASSIGNED`, `..._API_KEY_CREATED`, ...). `action` is a short verb (`create`, `publish`, `pause`).
-- `actor.actor_type` is `AUDIT_ACTOR_TYPE_USER`, `AUDIT_ACTOR_TYPE_SERVICE` (the platform acting on its own, for example a run completing) or `AUDIT_ACTOR_TYPE_SUPPORT`. For users, `user_id`, `display_name` and `email` are filled in; `pat_id` is set when the action came through an API key.
+- `actor.actor_type` is `AUDIT_ACTOR_TYPE_USER`, `AUDIT_ACTOR_TYPE_SERVICE` (the platform acting on its own, for example a run completing) or `AUDIT_ACTOR_TYPE_SUPPORT`. For users, `user_id`, `display_name` and `email` are filled in; `pat_id` can be empty even when the action came through an API key, so don't use it to tell API-key actions apart.
 - `resource_name` is the full resource name of the affected object. Use it to correlate with runs, automations and exceptions.
 - `status` is `AUDIT_STATUS_SUCCESS`, `AUDIT_STATUS_FAILURE` or `AUDIT_STATUS_PENDING`.
 

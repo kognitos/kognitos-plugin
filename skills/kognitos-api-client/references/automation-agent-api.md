@@ -27,7 +27,7 @@ On the automation resource (public REST), this surfaces as:
 
 - `english_code` — the AOP (markdown). **Read-only** via REST; authored by Quill.
 - `code` — reserved; empty for Quill-authored automations (the SPy lives in the agent's artifacts).
-- `input_specs`, `connections`, `display_name`, `description`, `version` — populated by Quill as it builds.
+- `input_specs`, `connections`, `display_name`, `description`, `version` — populated by Quill as it builds. Quill **replaces** a `display_name` you set at create time, so find your automations by id, not by name.
 - `kind` — **`AUTOMATION_KIND_QUILL2`** (see below).
 
 You cannot set automation code via `PATCH`. Code is authored only through the conversational thread.
@@ -272,7 +272,7 @@ curl -sS -X POST \
 curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${KOGNITOS_BASE_URL}/api/v1/${RUN_ID}"
 ```
 
-The run `state` is a one-of: `pending`, `executing`, `stopping`, `stopped`, `completed` (outputs in `state.completed.outputs`), `failed` (`id`/`description`/`location`), `awaiting_guidance` (`exception`/`description`/`location`), `awaiting_answer`. Archiving is not a state: an archived run keeps its state and gains `archived_time`. Outputs are keyed by name with `commonV1Value` types, e.g. `{"text": "INV-112233"}` or `{"number": {"lo": 114800, "mid": 0, "hi": 0, "flags": 0}}`. **File** outputs come back as `{"file": {"remote": "organizations/{org}/workspaces/{ws}/files/{file_id}"}}`; download the bytes with `GET /api/v1/<that name>:download` (the `:download` verb, not the bare resource). See [runs-api.md](runs-api.md) and [files-api.md](files-api.md).
+The run `state` holds `update_time` plus exactly one of: `pending`, `executing`, `stopping`, `stopped`, `completed` (outputs in `state.completed.outputs`), `failed` (`id`/`description`/`location`), `awaiting_guidance` (`exception`/`description`/`location`), `awaiting_answer`. Archiving is not a state: an archived run keeps its state and gains `archived_time`. Outputs are keyed by name with `commonV1Value` types, e.g. `{"text": "INV-112233"}` or `{"number": {"lo": 114800, "mid": 0, "hi": 0, "flags": 0}}`. **File** outputs come back as `{"file": {"remote": "organizations/{org}/workspaces/{ws}/files/{file_id}"}}`; download the bytes with `GET /api/v1/<that name>:download` (the `:download` verb, not the bare resource). See [runs-api.md](runs-api.md) and [files-api.md](files-api.md).
 
 ### `invocation_source` — who triggered the run
 
@@ -281,17 +281,16 @@ Each run records `invocation_details.invocation_source`:
 | Value | Set when |
 |-------|----------|
 | `INVOCATION_SOURCE_TEST` | Quill triggered the run to test the **draft** |
-| `INVOCATION_SOURCE_MANUAL` | A user invoked via the `:invoke` API — including PAT-authenticated calls (the PAT resolves to a user; `user_id` is recorded) |
+| `INVOCATION_SOURCE_MANUAL` | A user started the run from the web app |
+| `INVOCATION_SOURCE_PAT` | The `:invoke` API was called with an API key (`user_id` is the key's owner) |
 | `INVOCATION_SOURCE_SCHEDULE` | A schedule fired the run (typically a published automation) |
 | `INVOCATION_SOURCE_TRIGGER` | An event/trigger fired the run |
-
-(`INVOCATION_SOURCE_PAT` exists in the enum but the standard `:invoke` records `MANUAL`.)
 
 ## Exception handling: draft (Quill) vs published (Workbench)
 
 How a run *failure* is handled depends on the stage:
 
-- **Draft runs raise no exceptions.** Draft-stage runs set `disable_exception_handling = true` — this is true for **both** Quill's `TEST` runs **and** your own `MANUAL` draft `:invoke`. On failure the run parks in `awaiting_guidance` with an **empty `exception`** and a human-readable `description` (the traceback / missing-input message) plus a `location`. No exception resource is created.
+- **Draft runs raise no exceptions.** Draft-stage runs set `disable_exception_handling = true` — this is true for **both** Quill's `TEST` runs **and** your own draft `:invoke` (`MANUAL` or `PAT`). On failure the run parks in `awaiting_guidance` with an **empty `exception`** and a human-readable `description` (the traceback / missing-input message) plus a `location`. No exception resource is created.
 - **Published runs raise exceptions that are resolved in the Workbench.** Published-stage runs always use standard exception handling (the `disable_exception_handling` flag does not apply). A failure creates a real `Exception` resource and files it as a work unit on a Workbench work item. It is resolved in that work item's chat with the `hermes` agent, or by submitting a retry or stop decision on the work unit (see [exceptions-api.md](exceptions-api.md)).
 
 **You can invoke a draft yourself and ask Quill to debug it.** Beyond "Quill builds and tests," this is a supported workflow: invoke the draft (`AUTOMATION_STAGE_DRAFT`), and because draft runs surface failures inline (no exception is raised), tell Quill on the thread to monitor and fix that run — give it the run name (or just describe the failure) and it will read the run's `description`/`location`, diagnose, edit the code, and re-test.

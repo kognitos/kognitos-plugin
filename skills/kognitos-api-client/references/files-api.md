@@ -18,7 +18,7 @@ Upload the content as `multipart/form-data` with the file in a form field named 
 curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -F "file=@input.csv" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files:upload"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files:upload"
 ```
 
 The response (HTTP 201) holds the file's metadata; `metadata.name` is the file resource name:
@@ -34,7 +34,7 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files:generateUploadUrl"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files:generateUploadUrl"
 ```
 
 The response's `upload_uri` takes the same multipart POST without an `Authorization` header, and returns the same `metadata` body. It expires after one hour. Quote the URL and pass `--globoff`:
@@ -48,7 +48,7 @@ curl -sS --globoff -F "file=@large-report.pdf" "${UPLOAD_URI}"
 ```bash
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}/metadata"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}/metadata"
 ```
 
 Returns `name`, `filename`, `mime_type`, `size_bytes` (a string), `create_time` and `sha256_hash`. For an org-scoped file use `.../organizations/${ORG}/files/${FILE_ID}/metadata`.
@@ -61,7 +61,7 @@ Stream the file's bytes with the token (the response carries `Content-Type` and 
 curl -sS \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -o input.csv \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}:download"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}:download"
 ```
 
 For an org-scoped file use `.../organizations/${ORG}/files/${FILE_ID}:download`.
@@ -75,10 +75,22 @@ curl -sS -X POST \
   -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}:generateDownloadUrl"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}:generateDownloadUrl"
 ```
 
 Returns `download_uri`. For an Arrow table (`application/vnd.apache.arrow.file`), pass `{"format": "DOWNLOAD_FORMAT_CSV"}` to download it converted to CSV. For an org-scoped file use `.../organizations/${ORG}/files/${FILE_ID}:generateDownloadUrl`.
+
+### Delete a file
+
+```bash
+curl -sS -X DELETE \
+  -H "Authorization: Bearer ${KOGNITOS_TOKEN}" \
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/files/${FILE_ID}"
+```
+
+Returns `{}`; the metadata call then returns `404`. For an org-scoped file use `.../organizations/${ORG}/files/${FILE_ID}`.
+
+There is no call that lists files. Keep every file id you create (uploads, and the ZIP each automation `:export` writes) if you need to delete it later.
 
 ## Using Files as Automation Inputs
 
@@ -94,7 +106,7 @@ curl -sS -X POST \
       "input_file": {"file": {"remote": "organizations/'"${ORG}"'/workspaces/'"${WS}"'/files/'"${FILE_ID}"'"}}
     }
   }' \
-  "${BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}:invoke"
+  "${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}/automations/${AUTO_ID}:invoke"
 ```
 
 File values in run inputs and outputs use the same shape, `{"file": {"remote": "<file resource name>"}}`. A file value keyed `name` instead of `remote` is rejected with `INVALID_ARGUMENT`.

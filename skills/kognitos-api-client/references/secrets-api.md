@@ -16,7 +16,7 @@ ${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}                      (organizat
 ${KOGNITOS_BASE_URL}/api/v1/organizations/${ORG}/workspaces/${WS}      (one workspace)
 ```
 
-A secret's `scope` reads `organizations/{org}` or `organizations/{org}/workspaces/{ws}`; `shared` secrets are visible everywhere. These calls need the credential permissions on your role; a `403` means your role does not grant them.
+A secret's `scope` reads `organizations/{org}` or `organizations/{org}/workspaces/{ws}`; `shared` secrets are visible everywhere. These calls need the credential permissions on your role. A `403` with a plain-text `Forbidden` body means the gateway refused the call for this key: your role doesn't grant the permission, or the key was created with a narrower permission level. The response doesn't say which; check the key's settings and your role in the web app.
 
 ## Secret types
 
