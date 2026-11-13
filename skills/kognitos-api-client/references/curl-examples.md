@@ -15,7 +15,7 @@ Set these environment variables (or source `.env.local`):
 
 ## Base URL
 
-`KOGNITOS_BASE_URL` is `https://app.us-1.kognitos.com` for US customers. EU customers swap `us-1` for `eu-1`. Use it directly in snippets as `${KOGNITOS_BASE_URL}`.
+`KOGNITOS_BASE_URL` is the host you sign in to, for example `https://app.us-1.kognitos.com`. Use it directly in snippets as `${KOGNITOS_BASE_URL}`.
 
 ## Discovery
 
@@ -103,7 +103,9 @@ curl -sS -X POST \
 
 ### Step 4: Read the events until the turn ends
 
-Poll the thread until `status.state` is no longer a working state: `THREAD_STATUS_STATE_IDLE` (turn done), `..._AWAITING_ANSWER` / `..._AWAITING_APPROVAL` / `..._AWAITING_TOOL` (you must respond), or `..._FAILED`. Then read the events. Or subscribe to `GET .../stream` (SSE) for live events. The full state table is in [agents-api.md](agents-api.md).
+Poll the thread until `status.state` is no longer a working state: `THREAD_STATUS_STATE_IDLE` (turn done), `..._AWAITING_ANSWER` / `..._AWAITING_APPROVAL` / `..._AWAITING_TOOL` (you must respond), or `..._FAILED`. `IDLE` can flash mid-turn while a tool runs, so confirm it on a second poll. Then read the events. Or subscribe to `GET .../stream` (SSE) for live events. The full state table and the turn-done check are in [agents-api.md](agents-api.md).
+
+The first turn on a new automation usually returns a blueprint (a plan) rather than a build; reply "build it" when the plan is right.
 
 ```bash
 curl -sS -H "Authorization: Bearer ${KOGNITOS_TOKEN}" "${TBASE}" | jq '.status'

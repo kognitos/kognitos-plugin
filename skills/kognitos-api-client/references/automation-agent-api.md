@@ -34,7 +34,7 @@ You cannot set automation code via `PATCH`. Code is authored only through the co
 
 ## Base URL, auth, and permissions
 
-- `KOGNITOS_BASE_URL` is `https://app.us-1.kognitos.com` for US customers; EU customers swap `us-1` for `eu-1`. Dev environments look like `https://app.us-1.dev.kognitos.com`.
+- `KOGNITOS_BASE_URL` is the host you sign in to, for example `https://app.us-1.kognitos.com`.
 - Auth is a PAT: `Authorization: Bearer ${KOGNITOS_TOKEN}` (`kgn_pat_` prefix). The token identifies the user, not an org/workspace.
 - Use the **automation-scoped path** for all thread calls (see below). The workspace-scoped agent path (`/api/v1/agents/quill2/...`) is **not** authorized for PAT clients and returns `403`.
 
@@ -110,23 +110,27 @@ curl -sS -X POST \
 
 The message can also carry `documents` and `images` (see [Attaching files](#attaching-files)). The full input envelope is in [agents-api.md](agents-api.md).
 
+On a new automation, Quill's first turn usually drafts a **blueprint** (a plan in business language, stating its assumptions) and builds nothing. Review it, then reply on the same thread to refine it or to tell Quill to build it. Say so in the first message if you want it to build straight away.
+
 > The message shape is a single `message` object with a `content` string. This is **not** the legacy double-nested `user_message` / `user_message_type` structure.
 
 ### 4. Follow the turn
 
-Poll `GET ${TBASE}` until `status.state` leaves the working states, then read `GET ${TBASE}/events` (or hold `GET ${TBASE}/stream` open for live events). The states, the event types, and the rule for telling a finished turn from one that has not started yet are in [agents-api.md](agents-api.md). Quill turns are long: one turn usually contains several `generation_complete` events, and Quill often shows `THREAD_STATUS_STATE_SLEEPING` while it waits on a test run. Keep polling through both.
+Poll `GET ${TBASE}` until `status.state` leaves the working states, then read `GET ${TBASE}/events` (or hold `GET ${TBASE}/stream` open for live events). The states, the event types, and the rule for telling a finished turn from one that has not started yet are in [agents-api.md](agents-api.md). Quill turns are long: one turn usually contains several `generation_complete` events, and Quill shows `THREAD_STATUS_STATE_SLEEPING` while it waits on a test run. Keep polling through both. When Quill starts a test run the status can show `IDLE` for a moment before `SLEEPING`, so apply the turn-done check in [agents-api.md](agents-api.md) rather than stopping at the first `IDLE`.
 
 As the agent works, you'll observe `tool_call_start` / `tool_call_argument` / `tool_result` events for the tools it runs internally — reading and writing its artifacts, searching for apps and procedures, validating, test-running, saving, and so on. You don't call these; you only observe them, and the exact set may change over time, so don't depend on specific tool names. The one kind you may need to act on is a **remote** tool call (`is_remote: true`) — most notably `request_connection` (see step 6) — which pauses the turn until you return a result. Treat tool calls as internal detail — never surface tool names, code, or connection IDs to a business user.
 
 ### 5. Answer questions and approvals
 
-When Quill asks something (for example which email app to use), the thread shows `THREAD_STATUS_STATE_AWAITING_ANSWER` and the events end with an `interrupt`. Reply on the same thread with an `interrupt_reply`, passing option labels verbatim. Tool approvals are rare but follow the same pattern with a `tool_approval_reply`. Both shapes are in [agents-api.md](agents-api.md).
+When Quill asks something (for example which email app to use), the thread shows `THREAD_STATUS_STATE_AWAITING_ANSWER` and the events end with an `interrupt`. One interrupt can hold several questions; answer each by its question `id` in one `interrupt_reply`, passing option labels verbatim. Tool approvals are rare but follow the same pattern with a `tool_approval_reply`. Both shapes are in [agents-api.md](agents-api.md).
 
 ### 6. Remote tool calls (e.g. choosing a connection)
 
-Some tools are **remote** (`"is_remote": true` on `tool_call_start`) — most notably `request_connection`, which asks the user to pick or create a connection for an app the automation needs. The turn pauses until the result is provided. In the web UI this is fulfilled by a connection picker; the result is the chosen **connection id**.
+Some tools are **remote** (`"is_remote": true` on `tool_call_start`) — most notably `request_connection`, which asks the user to pick or create a connection for an app the automation needs. The thread shows `THREAD_STATUS_STATE_AWAITING_TOOL` and the turn pauses until the result is provided. In the web UI this is fulfilled by a connection picker; the result is the chosen **connection id**.
 
-A headless client fulfils it in two steps. First, ensure a connection exists for the requested `appName`/`appVersion` (the `request_connection` arguments name both). If none exists, create one — standalone integrations need no OAuth, so an empty body returns a usable connection id (see [books-api.md](books-api.md)):
+The `tool_call_argument` events after the `tool_call_start` carry `appName`, `appVersion`, and a `reason` you can show the user. Integrations that already have a shared workspace connection (file, CSV, DOCX, PDF and similar) are used directly and don't trigger `request_connection`.
+
+A headless client fulfils it in two steps. First, ensure a connection exists for the requested `appName`/`appVersion`. If none exists, create one — standalone integrations need no OAuth, so an empty body returns a usable connection id (see [books-api.md](books-api.md)):
 
 ```bash
 curl -sS -X POST \
@@ -146,7 +150,9 @@ curl -sS -X POST \
   "${TBASE}/tool-results"
 ```
 
-The agent resumes immediately with that connection. It will not save an automation that depends on an unresolved connection. (Apps requiring OAuth also need an authorize step, `PUT .../connections/{connection_id}/authorize` — see [books-api.md](books-api.md).)
+The agent resumes immediately with that connection. It will not save an automation that depends on an unresolved connection.
+
+Apps that need OAuth (Slack, Gmail, Outlook and similar) can't be connected headlessly: creating the connection returns an `authorize_url` for a person to open, and the connection id exists only after they finish (see [books-api.md](books-api.md)). If you can't provide a connection, answer with `"success": false` and an `"error"` saying why. Quill then stops, explains what is missing, and builds once the app is connected.
 
 ---
 
@@ -281,14 +287,14 @@ Each run records `invocation_details.invocation_source`:
 
 (`INVOCATION_SOURCE_PAT` exists in the enum but the standard `:invoke` records `MANUAL`.)
 
-## Exception handling: draft (Quill) vs published (Astral)
+## Exception handling: draft (Quill) vs published (Workbench)
 
 How a run *failure* is handled depends on the stage:
 
-- **Draft runs have no Astral.** Draft-stage runs set `disable_exception_handling = true` — this is true for **both** Quill's `TEST` runs **and** your own `MANUAL` draft `:invoke`. On failure the run parks in `awaiting_guidance` with an **empty `exception`** and a human-readable `description` (the traceback / missing-input message) plus a `location`. No exception resource is created.
-- **Published runs are managed by Astral.** Published-stage runs always use standard Astral exception handling (the `disable_exception_handling` flag does not apply). A failure creates a real `Exception` resource and drives the guidance-center resolution flow (assign / reply / skip / patch / retry — see [exceptions-api.md](exceptions-api.md)).
+- **Draft runs raise no exceptions.** Draft-stage runs set `disable_exception_handling = true` — this is true for **both** Quill's `TEST` runs **and** your own `MANUAL` draft `:invoke`. On failure the run parks in `awaiting_guidance` with an **empty `exception`** and a human-readable `description` (the traceback / missing-input message) plus a `location`. No exception resource is created.
+- **Published runs raise exceptions that are resolved in the Workbench.** Published-stage runs always use standard exception handling (the `disable_exception_handling` flag does not apply). A failure creates a real `Exception` resource and files it as a work unit on a Workbench work item. It is resolved in that work item's chat with the `hermes` agent, or by submitting a retry or stop decision on the work unit (see [exceptions-api.md](exceptions-api.md)).
 
-**You can invoke a draft yourself and ask Quill to debug it.** Beyond "Quill builds and tests," this is a supported workflow: invoke the draft (`AUTOMATION_STAGE_DRAFT`), and because draft runs surface failures inline (no Astral), tell Quill on the thread to monitor and fix that run — give it the run name (or just describe the failure) and it will read the run's `description`/`location`, diagnose, edit the code, and re-test.
+**You can invoke a draft yourself and ask Quill to debug it.** Beyond "Quill builds and tests," this is a supported workflow: invoke the draft (`AUTOMATION_STAGE_DRAFT`), and because draft runs surface failures inline (no exception is raised), tell Quill on the thread to monitor and fix that run — give it the run name (or just describe the failure) and it will read the run's `description`/`location`, diagnose, edit the code, and re-test.
 
 ---
 
